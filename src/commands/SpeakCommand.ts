@@ -4,6 +4,7 @@ import { BaseCommand } from './BaseCommand';
 import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
 import { SlashCommandConfig } from '../models/SlashCommandConfig';
+import { Config } from '../core/Config';
 import { PollyService } from '../core/PollyService';
 import { VoiceManager } from '../core/VoiceManager';
 import { findVoice } from '../models/VoiceCatalog';
@@ -22,30 +23,35 @@ export class SpeakCommand extends BaseCommand {
   readonly description = 'Speaks text in your voice channel using AWS Polly';
   readonly category = CommandCategory.Voice;
   readonly usage = 'speak [:VoiceName] <text>';
-  readonly slash: SlashCommandConfig = {
-    slashAliases: ['tts', 'say'],
-    options: [
-      {
-        type: 'string',
-        name: 'text',
-        description: 'Text to speak',
-        required: true,
-        maxLength: 3000,
-      },
-      {
-        type: 'string',
-        name: 'voice',
-        description: 'Polly voice ID (e.g. Ricardo). Omit to use the default.',
-        required: false,
-      },
-    ],
-  };
+  readonly slash: SlashCommandConfig;
+
+  private readonly maxTextLength: number;
 
   constructor(
+    @inject(Config) config: Config,
     @inject(PollyService) private readonly polly: PollyService,
     @inject(VoiceManager) private readonly voice: VoiceManager,
   ) {
     super();
+    this.maxTextLength = config.get<number>('polly.maxTextLength');
+    this.slash = {
+      slashAliases: ['tts', 'say'],
+      options: [
+        {
+          type: 'string',
+          name: 'text',
+          description: `Text to speak (max ${this.maxTextLength} chars; longer is truncated)`,
+          required: true,
+          maxLength: this.maxTextLength,
+        },
+        {
+          type: 'string',
+          name: 'voice',
+          description: 'Polly voice ID (e.g. Ricardo). Omit to use the default.',
+          required: false,
+        },
+      ],
+    };
   }
 
   async execute(ctx: CommandContext): Promise<void> {
@@ -62,10 +68,13 @@ export class SpeakCommand extends BaseCommand {
       return;
     }
 
+    const wasTruncated = parsed.text.length > this.maxTextLength;
+    const finalText = wasTruncated ? parsed.text.slice(0, this.maxTextLength) : parsed.text;
+
     await ctx.defer();
 
     const result = await this.polly.synthesizeToFile({
-      text: parsed.text,
+      text: finalText,
       voice: parsed.voice,
     });
     console.debug(
@@ -74,7 +83,10 @@ export class SpeakCommand extends BaseCommand {
 
     try {
       await this.voice.play(channel, result.filePath);
-      await ctx.reply(`Speaking with \`${result.voice}\`.`);
+      const note = wasTruncated
+        ? ` (truncated to ${this.maxTextLength} chars)`
+        : '';
+      await ctx.reply(`Speaking with \`${result.voice}\`${note}.`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       await ctx.reply(`Voice playback failed: ${reason}`);

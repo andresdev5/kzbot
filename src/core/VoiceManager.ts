@@ -28,6 +28,13 @@ export class VoiceManager {
     await entersState(player, AudioPlayerStatus.Playing, 15_000);
   }
 
+  stop(guildId: string): boolean {
+    const player = this.players.get(guildId);
+    if (!player) return false;
+    if (player.state.status === AudioPlayerStatus.Idle) return false;
+    return player.stop(true);
+  }
+
   leave(guildId: string): boolean {
     const connection = getVoiceConnection(guildId);
     const player = this.players.get(guildId);

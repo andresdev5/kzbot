@@ -6,12 +6,12 @@ import { SlashCommandConfig } from '../models/SlashCommandConfig';
 import { VoiceManager } from '../core/VoiceManager';
 
 @injectable()
-export class LeaveCommand extends BaseCommand {
-  readonly name = 'leave';
-  readonly aliases = ['dc', 'disconnect', 'fuera'];
-  readonly description = 'Disconnects the bot from the current voice channel';
+export class StopCommand extends BaseCommand {
+  readonly name = 'stop';
+  readonly aliases = ['shutup', 'callate', 'silence'];
+  readonly description = 'Stops the current playback without leaving the voice channel';
   readonly category = CommandCategory.Voice;
-  readonly usage = 'leave';
+  readonly usage = 'stop';
   readonly slash: SlashCommandConfig = {};
 
   constructor(@inject(VoiceManager) private readonly voice: VoiceManager) {
@@ -23,7 +23,7 @@ export class LeaveCommand extends BaseCommand {
       await ctx.reply('Voice commands only work in servers.');
       return;
     }
-    const left = this.voice.leave(ctx.guildId);
-    await ctx.reply(left ? 'Disconnected.' : 'I am not in a voice channel.');
+    const stopped = this.voice.stop(ctx.guildId);
+    await ctx.reply(stopped ? 'Stopped.' : 'Nothing is playing.');
   }
 }

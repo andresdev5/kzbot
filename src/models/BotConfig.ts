@@ -19,6 +19,7 @@ export interface PollySection {
   defaultVoice: PollyVoice;
   defaultLanguage: PollyLanguage;
   outputFormat: PollyOutputFormat;
+  maxTextLength: number;
 }
 
 export interface CacheSection {
