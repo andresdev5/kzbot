@@ -1,5 +1,6 @@
 import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
+import { SlashCommandConfig } from '../models/SlashCommandConfig';
 
 export interface ICommand {
   readonly name: string;
@@ -7,6 +8,7 @@ export interface ICommand {
   readonly description: string;
   readonly category: CommandCategory;
   readonly usage?: string;
+  readonly slash?: SlashCommandConfig;
 
   execute(context: CommandContext): Promise<void>;
 }

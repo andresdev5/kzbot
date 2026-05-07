@@ -26,4 +26,5 @@ export const botConfig: BotSection = {
     .map((id) => id.trim())
     .filter(Boolean),
   aliasPrefixes: parseAliasPrefixes(process.env.BOT_ALIAS_PREFIXES),
+  devGuildId: process.env.DISCORD_DEV_GUILD_ID ?? '',
 };

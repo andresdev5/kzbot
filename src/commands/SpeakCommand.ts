@@ -1,14 +1,15 @@
-import { ChannelType, GuildMember } from 'discord.js';
+import { ChannelType } from 'discord.js';
 import { inject, injectable } from 'tsyringe';
 import { BaseCommand } from './BaseCommand';
 import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
+import { SlashCommandConfig } from '../models/SlashCommandConfig';
 import { PollyService } from '../core/PollyService';
 import { VoiceManager } from '../core/VoiceManager';
 import { findVoice } from '../models/VoiceCatalog';
 import { PollyVoice } from '../enums/PollyVoice';
 
-interface ParsedSpeakArgs {
+interface ParsedSpeak {
   voice?: PollyVoice;
   voiceToken?: string;
   text: string;
@@ -18,9 +19,27 @@ interface ParsedSpeakArgs {
 export class SpeakCommand extends BaseCommand {
   readonly name = 'speak';
   readonly aliases = ['say', 'tts'];
-  readonly description = 'Joins your voice channel and speaks the given text using AWS Polly';
+  readonly description = 'Speaks text in your voice channel using AWS Polly';
   readonly category = CommandCategory.Voice;
   readonly usage = 'speak [:VoiceName] <text>';
+  readonly slash: SlashCommandConfig = {
+    slashAliases: ['tts', 'say'],
+    options: [
+      {
+        type: 'string',
+        name: 'text',
+        description: 'Text to speak',
+        required: true,
+        maxLength: 3000,
+      },
+      {
+        type: 'string',
+        name: 'voice',
+        description: 'Polly voice ID (e.g. Ricardo). Omit to use the default.',
+        required: false,
+      },
+    ],
+  };
 
   constructor(
     @inject(PollyService) private readonly polly: PollyService,
@@ -29,53 +48,73 @@ export class SpeakCommand extends BaseCommand {
     super();
   }
 
-  async execute({ message, rawArgs }: CommandContext): Promise<void> {
-    if (!rawArgs) {
-      await message.reply('Provide some text to speak.');
+  async execute(ctx: CommandContext): Promise<void> {
+    const parsed = this.readArgs(ctx);
+    if ('error' in parsed) {
+      await ctx.reply(parsed.error);
       return;
     }
 
-    const parsed = SpeakCommand.parseArgs(rawArgs);
-    if (parsed.voiceToken && !parsed.voice) {
-      await message.reply(
-        `Unknown voice \`${parsed.voiceToken}\`. Use \`voices\` to see the available list.`,
-      );
-      return;
-    }
-    if (!parsed.text) {
-      await message.reply('Provide some text to speak after the voice.');
-      return;
-    }
-
-    const member = message.member as GuildMember | null;
+    const member = await ctx.getMember();
     const channel = member?.voice.channel;
     if (!channel || channel.type !== ChannelType.GuildVoice) {
-      await message.reply('You must be in a voice channel.');
+      await ctx.reply('You must be in a voice channel.');
       return;
     }
 
-    const { filePath, cached, voice } = await this.polly.synthesizeToFile({
+    await ctx.defer();
+
+    const result = await this.polly.synthesizeToFile({
       text: parsed.text,
       voice: parsed.voice,
     });
     console.debug(
-      `[polly] ${cached ? 'cache hit' : 'cache miss'} (${voice}): ${filePath}`,
+      `[polly] ${result.cached ? 'cache hit' : 'cache miss'} (${result.voice}): ${result.filePath}`,
     );
 
     try {
-      await this.voice.play(channel, filePath);
+      await this.voice.play(channel, result.filePath);
+      await ctx.reply(`Speaking with \`${result.voice}\`.`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      await message.reply(`Voice playback failed: ${reason}`).catch(() => undefined);
+      await ctx.reply(`Voice playback failed: ${reason}`);
       throw err;
     }
   }
 
-  private static parseArgs(raw: string): ParsedSpeakArgs {
-    const trimmed = raw.trim();
-    if (!trimmed.startsWith(':')) {
-      return { text: trimmed };
+  private readArgs(ctx: CommandContext): ParsedSpeak | { error: string } {
+    if (ctx.source === 'interaction') {
+      const interaction = ctx.interaction!;
+      const text = interaction.options.getString('text', true).trim();
+      const voiceArg = interaction.options.getString('voice')?.trim();
+      if (!text) return { error: 'Provide some text to speak.' };
+
+      if (voiceArg) {
+        const found = findVoice(voiceArg);
+        if (!found) {
+          return { error: `Unknown voice \`${voiceArg}\`. Use \`/voices\` to see the list.` };
+        }
+        return { voice: found.id, text };
+      }
+      return { text };
     }
+
+    if (!ctx.rawArgs) return { error: 'Provide some text to speak.' };
+    const parsed = SpeakCommand.parseRawArgs(ctx.rawArgs);
+    if (parsed.voiceToken && !parsed.voice) {
+      return {
+        error: `Unknown voice \`${parsed.voiceToken}\`. Use \`${ctx.prefix}voices\` to see the list.`,
+      };
+    }
+    if (!parsed.text) {
+      return { error: 'Provide some text to speak after the voice.' };
+    }
+    return parsed;
+  }
+
+  private static parseRawArgs(raw: string): ParsedSpeak {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith(':')) return { text: trimmed };
     const rest = trimmed.slice(1);
     const spaceIdx = rest.search(/\s/);
     const token = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);

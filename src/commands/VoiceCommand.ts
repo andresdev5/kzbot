@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import { BaseCommand } from './BaseCommand';
 import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
+import { SlashCommandConfig } from '../models/SlashCommandConfig';
 import { findVoice } from '../models/VoiceCatalog';
 import { PollyService } from '../core/PollyService';
 
@@ -12,31 +13,44 @@ export class VoiceCommand extends BaseCommand {
   readonly description = 'Sets the default Polly voice (e.g. "voice Ricardo")';
   readonly category = CommandCategory.Voice;
   readonly usage = 'voice <name>';
+  readonly slash: SlashCommandConfig = {
+    options: [
+      {
+        type: 'string',
+        name: 'name',
+        description: 'Voice ID to set as default. Omit to show the current one.',
+        required: false,
+      },
+    ],
+  };
 
   constructor(@inject(PollyService) private readonly polly: PollyService) {
     super();
   }
 
-  async execute({ message, args, prefix }: CommandContext): Promise<void> {
-    const requested = args[0];
+  async execute(ctx: CommandContext): Promise<void> {
+    const requested = ctx.source === 'interaction'
+      ? ctx.interaction!.options.getString('name') ?? undefined
+      : ctx.args[0];
+
     if (!requested) {
       const current = this.polly.getDefaultVoice();
-      await message.reply(
-        `Current default voice: \`${current}\`. Use \`${prefix}voices\` to list options.`,
+      await ctx.reply(
+        `Current default voice: \`${current}\`. Use \`${ctx.prefix}voices\` to list options.`,
       );
       return;
     }
 
     const voice = findVoice(requested);
     if (!voice) {
-      await message.reply(
-        `Unknown voice \`${requested}\`. Use \`${prefix}voices\` to see the full list.`,
+      await ctx.reply(
+        `Unknown voice \`${requested}\`. Use \`${ctx.prefix}voices\` to see the full list.`,
       );
       return;
     }
 
     this.polly.setDefaultVoice(voice.id);
-    await message.reply(
+    await ctx.reply(
       `Default voice set to \`${voice.id}\` (${voice.language}, ${voice.gender}).`,
     );
   }

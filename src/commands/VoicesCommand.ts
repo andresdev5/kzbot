@@ -3,6 +3,7 @@ import { inject, injectable } from 'tsyringe';
 import { BaseCommand } from './BaseCommand';
 import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
+import { SlashCommandConfig } from '../models/SlashCommandConfig';
 import { VOICE_CATALOG, groupByLanguage } from '../models/VoiceCatalog';
 import { PollyService } from '../core/PollyService';
 
@@ -13,12 +14,13 @@ export class VoicesCommand extends BaseCommand {
   readonly description = 'Lists all available Polly Standard voices';
   readonly category = CommandCategory.Voice;
   readonly usage = 'voices';
+  readonly slash: SlashCommandConfig = {};
 
   constructor(@inject(PollyService) private readonly polly: PollyService) {
     super();
   }
 
-  async execute({ message, prefix }: CommandContext): Promise<void> {
+  async execute(ctx: CommandContext): Promise<void> {
     const groups = groupByLanguage();
     const current = this.polly.getDefaultVoice();
 
@@ -33,12 +35,12 @@ export class VoicesCommand extends BaseCommand {
     const embed = new EmbedBuilder()
       .setTitle(`Polly Standard Voices (${VOICE_CATALOG.length})`)
       .setDescription(
-        `Current default: \`${current}\`. Change with \`${prefix}voice <name>\`.\n\n` +
+        `Current default: \`${current}\`. Change with \`${ctx.prefix}voice <name>\`.\n\n` +
           lines.join('\n'),
       )
       .setColor(0x5865f2);
 
-    await message.reply({ embeds: [embed] });
+    await ctx.reply({ embeds: [embed] });
   }
 
   private static shortGender(gender: string): string {

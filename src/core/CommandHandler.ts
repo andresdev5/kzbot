@@ -1,11 +1,13 @@
-import { Client, Message } from 'discord.js';
+import { ChatInputCommandInteraction, Client, Message, RESTPostAPIChatInputApplicationCommandsJSONBody } from 'discord.js';
 import { container, inject, injectable } from 'tsyringe';
 import { ICommand } from '../commands/ICommand';
+import { CommandContext } from '../models/CommandContext';
 import { Config } from './Config';
+import { buildSlashCommands } from './SlashBuilder';
 
 export const COMMAND_TOKEN = Symbol.for('ICommand');
 
-interface Dispatch {
+interface PrefixDispatch {
   command: ICommand;
   prefix: string;
   invokedName: string;
@@ -54,28 +56,52 @@ export class CommandHandler {
     return aliased ? this.commands.get(aliased) : undefined;
   }
 
+  buildSlashJson(): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
+    const result: RESTPostAPIChatInputApplicationCommandsJSONBody[] = [];
+    for (const command of this.commands.values()) {
+      for (const builder of buildSlashCommands(command)) {
+        result.push(builder.toJSON());
+      }
+    }
+    return result;
+  }
+
   async handle(client: Client, message: Message): Promise<void> {
     if (message.author.bot || !message.content) return;
 
-    const dispatch = this.matchPrefix(message.content) ?? this.matchAliasPrefix(message.content);
+    const dispatch =
+      this.matchPrefix(message.content) ?? this.matchAliasPrefix(message.content);
     if (!dispatch) return;
 
+    const ctx = CommandContext.fromMessage(
+      client,
+      message,
+      dispatch.args,
+      dispatch.rawArgs,
+      dispatch.prefix,
+      dispatch.invokedName,
+    );
+
+    await this.run(dispatch.command, ctx);
+  }
+
+  async handleInteraction(client: Client, interaction: ChatInputCommandInteraction): Promise<void> {
+    const command = this.resolve(interaction.commandName);
+    if (!command) return;
+    const ctx = CommandContext.fromInteraction(client, interaction);
+    await this.run(command, ctx);
+  }
+
+  private async run(command: ICommand, ctx: CommandContext): Promise<void> {
     try {
-      await dispatch.command.execute({
-        client,
-        message,
-        args: dispatch.args,
-        rawArgs: dispatch.rawArgs,
-        prefix: dispatch.prefix,
-        invokedName: dispatch.invokedName,
-      });
+      await command.execute(ctx);
     } catch (err) {
-      console.error(`Error executing command "${dispatch.command.name}":`, err);
-      await message.reply('There was an error executing that command.').catch(() => undefined);
+      console.error(`Error executing command "${command.name}":`, err);
+      await ctx.reply('There was an error executing that command.').catch(() => undefined);
     }
   }
 
-  private matchPrefix(content: string): Dispatch | null {
+  private matchPrefix(content: string): PrefixDispatch | null {
     const prefix = this.config.get<string>('bot.prefix');
     if (!content.startsWith(prefix)) return null;
 
@@ -92,7 +118,7 @@ export class CommandHandler {
     return { command, prefix, invokedName, args, rawArgs };
   }
 
-  private matchAliasPrefix(content: string): Dispatch | null {
+  private matchAliasPrefix(content: string): PrefixDispatch | null {
     const aliasPrefixes = this.config.getOrDefault<Record<string, string>>(
       'bot.aliasPrefixes',
       {},

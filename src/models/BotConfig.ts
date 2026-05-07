@@ -6,6 +6,7 @@ export interface BotSection {
   prefix: string;
   ownerIds: string[];
   aliasPrefixes: Record<string, string>;
+  devGuildId: string;
 }
 
 export interface AwsSection {
