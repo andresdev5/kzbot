@@ -5,6 +5,14 @@ import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
 import { PollyService } from '../core/PollyService';
 import { VoiceManager } from '../core/VoiceManager';
+import { findVoice } from '../models/VoiceCatalog';
+import { PollyVoice } from '../enums/PollyVoice';
+
+interface ParsedSpeakArgs {
+  voice?: PollyVoice;
+  voiceToken?: string;
+  text: string;
+}
 
 @injectable()
 export class SpeakCommand extends BaseCommand {
@@ -12,7 +20,7 @@ export class SpeakCommand extends BaseCommand {
   readonly aliases = ['say', 'tts'];
   readonly description = 'Joins your voice channel and speaks the given text using AWS Polly';
   readonly category = CommandCategory.Voice;
-  readonly usage = 'speak <text>';
+  readonly usage = 'speak [:VoiceName] <text>';
 
   constructor(
     @inject(PollyService) private readonly polly: PollyService,
@@ -27,6 +35,18 @@ export class SpeakCommand extends BaseCommand {
       return;
     }
 
+    const parsed = SpeakCommand.parseArgs(rawArgs);
+    if (parsed.voiceToken && !parsed.voice) {
+      await message.reply(
+        `Unknown voice \`${parsed.voiceToken}\`. Use \`voices\` to see the available list.`,
+      );
+      return;
+    }
+    if (!parsed.text) {
+      await message.reply('Provide some text to speak after the voice.');
+      return;
+    }
+
     const member = message.member as GuildMember | null;
     const channel = member?.voice.channel;
     if (!channel || channel.type !== ChannelType.GuildVoice) {
@@ -34,8 +54,13 @@ export class SpeakCommand extends BaseCommand {
       return;
     }
 
-    const { filePath, cached } = await this.polly.synthesizeToFile({ text: rawArgs });
-    console.debug(`[polly] ${cached ? 'cache hit' : 'cache miss'}: ${filePath}`);
+    const { filePath, cached, voice } = await this.polly.synthesizeToFile({
+      text: parsed.text,
+      voice: parsed.voice,
+    });
+    console.debug(
+      `[polly] ${cached ? 'cache hit' : 'cache miss'} (${voice}): ${filePath}`,
+    );
 
     try {
       await this.voice.play(channel, filePath);
@@ -44,5 +69,18 @@ export class SpeakCommand extends BaseCommand {
       await message.reply(`Voice playback failed: ${reason}`).catch(() => undefined);
       throw err;
     }
+  }
+
+  private static parseArgs(raw: string): ParsedSpeakArgs {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith(':')) {
+      return { text: trimmed };
+    }
+    const rest = trimmed.slice(1);
+    const spaceIdx = rest.search(/\s/);
+    const token = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+    const text = spaceIdx === -1 ? '' : rest.slice(spaceIdx + 1).trim();
+    const found = findVoice(token);
+    return { voice: found?.id, voiceToken: token, text };
   }
 }

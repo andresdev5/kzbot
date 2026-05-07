@@ -2,8 +2,10 @@ import { PollyClient, SynthesizeSpeechCommand, Engine } from '@aws-sdk/client-po
 import { Readable } from 'node:stream';
 import { inject, injectable } from 'tsyringe';
 import { PollyLanguage, PollyOutputFormat, PollyVoice } from '../enums/PollyVoice';
+import { findVoice } from '../models/VoiceCatalog';
 import { Config } from './Config';
 import { AudioCacheService } from './AudioCacheService';
+import { SettingsService, SETTING_DEFAULT_VOICE } from './SettingsService';
 
 export interface SynthesizeOptions {
   text: string;
@@ -16,6 +18,7 @@ export interface SynthesizeOptions {
 export interface SynthesizeResult {
   filePath: string;
   cached: boolean;
+  voice: PollyVoice;
 }
 
 @injectable()
@@ -25,6 +28,7 @@ export class PollyService {
   constructor(
     @inject(Config) private readonly config: Config,
     @inject(AudioCacheService) private readonly cache: AudioCacheService,
+    @inject(SettingsService) private readonly settings: SettingsService,
   ) {
     this.client = new PollyClient({
       region: this.config.get<string>('aws.region'),
@@ -35,15 +39,32 @@ export class PollyService {
     });
   }
 
+  getDefaultVoice(): PollyVoice {
+    const stored = this.settings.get(SETTING_DEFAULT_VOICE);
+    if (stored) {
+      const found = findVoice(stored);
+      if (found) return found.id;
+    }
+    return this.config.get<PollyVoice>('polly.defaultVoice');
+  }
+
+  setDefaultVoice(voice: PollyVoice): void {
+    this.settings.set(SETTING_DEFAULT_VOICE, voice);
+  }
+
   async synthesizeToFile(options: SynthesizeOptions): Promise<SynthesizeResult> {
-    const voice = options.voice ?? this.config.get<PollyVoice>('polly.defaultVoice');
+    const voice = options.voice ?? this.getDefaultVoice();
     const format = options.format ?? this.config.get<PollyOutputFormat>('polly.outputFormat');
-    const language = options.language ?? this.config.get<PollyLanguage>('polly.defaultLanguage');
+    const voiceInfo = findVoice(voice);
+    const language =
+      options.language ??
+      (voiceInfo?.languageCode as PollyLanguage | undefined) ??
+      this.config.get<PollyLanguage>('polly.defaultLanguage');
 
     const cacheKey = { voice, text: options.text, format };
     const hit = this.cache.find(cacheKey);
     if (hit) {
-      return { filePath: hit.filePath, cached: true };
+      return { filePath: hit.filePath, cached: true, voice };
     }
 
     const command = new SynthesizeSpeechCommand({
@@ -61,7 +82,7 @@ export class PollyService {
 
     const buffer = await PollyService.streamToBuffer(response.AudioStream as Readable);
     const entry = this.cache.save(cacheKey, buffer);
-    return { filePath: entry.filePath, cached: false };
+    return { filePath: entry.filePath, cached: false, voice };
   }
 
   private static async streamToBuffer(stream: Readable): Promise<Buffer> {

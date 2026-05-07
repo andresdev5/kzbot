@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { inject, injectable } from 'tsyringe';
 import { Config } from './Config';
+import { DatabaseProvider } from './DatabaseProvider';
 import { CacheEntry, CacheLookupKey } from '../models/CacheEntry';
 import { PollyOutputFormat, PollyVoice } from '../enums/PollyVoice';
 
@@ -19,7 +20,6 @@ interface CacheRow {
 
 @injectable()
 export class AudioCacheService {
-  private readonly db: Database.Database;
   private readonly audioDir: string;
   private readonly enabled: boolean;
 
@@ -34,17 +34,15 @@ export class AudioCacheService {
   ]>;
   private readonly deleteStmt: Database.Statement<[number]>;
 
-  constructor(@inject(Config) private readonly config: Config) {
-    this.enabled = this.config.get<boolean>('cache.enabled');
-    this.audioDir = this.config.get<string>('cache.audioDir');
-    const dbPath = this.config.get<string>('cache.dbPath');
-
+  constructor(
+    @inject(Config) config: Config,
+    @inject(DatabaseProvider) private readonly database: DatabaseProvider,
+  ) {
+    this.enabled = config.get<boolean>('cache.enabled');
+    this.audioDir = config.get<string>('cache.audioDir');
     fs.mkdirSync(this.audioDir, { recursive: true });
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.exec(`
+    this.database.db.exec(`
       CREATE TABLE IF NOT EXISTS cache_entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         voice TEXT NOT NULL,
@@ -59,15 +57,15 @@ export class AudioCacheService {
         ON cache_entries(voice, text_normalized, format);
     `);
 
-    this.findStmt = this.db.prepare(
+    this.findStmt = this.database.db.prepare(
       'SELECT * FROM cache_entries WHERE voice = ? AND text_normalized = ? AND format = ?',
     );
-    this.insertStmt = this.db.prepare(
+    this.insertStmt = this.database.db.prepare(
       `INSERT INTO cache_entries
         (voice, text_normalized, text_original, format, file_name, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    this.deleteStmt = this.db.prepare('DELETE FROM cache_entries WHERE id = ?');
+    this.deleteStmt = this.database.db.prepare('DELETE FROM cache_entries WHERE id = ?');
   }
 
   isEnabled(): boolean {
