@@ -5,6 +5,7 @@ export interface BotSection {
   clientId: string;
   prefix: string;
   ownerIds: string[];
+  aliasPrefixes: Record<string, string>;
 }
 
 export interface AwsSection {
@@ -19,8 +20,15 @@ export interface PollySection {
   outputFormat: PollyOutputFormat;
 }
 
+export interface CacheSection {
+  enabled: boolean;
+  audioDir: string;
+  dbPath: string;
+}
+
 export interface AppConfig {
   bot: BotSection;
   aws: AwsSection;
   polly: PollySection;
+  cache: CacheSection;
 }

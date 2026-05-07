@@ -1,7 +1,9 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { generateDependencyReport } from '@discordjs/voice';
 import { inject, injectable } from 'tsyringe';
 import { CommandHandler } from './CommandHandler';
 import { Config } from './Config';
+import { VoiceManager } from './VoiceManager';
 
 @injectable()
 export class Bot {
@@ -10,6 +12,7 @@ export class Bot {
   constructor(
     @inject(Config) private readonly config: Config,
     @inject(CommandHandler) private readonly commands: CommandHandler,
+    @inject(VoiceManager) private readonly voice: VoiceManager,
   ) {
     this.client = new Client({
       intents: [
@@ -23,6 +26,9 @@ export class Bot {
   }
 
   async start(): Promise<void> {
+    console.log('--- @discordjs/voice dependency report ---');
+    console.log(generateDependencyReport());
+    console.log('-------------------------------------------');
     this.commands.registerAll();
     this.bindEvents();
     await this.client.login(this.config.get<string>('bot.token'));
@@ -40,6 +46,10 @@ export class Bot {
 
     this.client.on('messageCreate', (message) => {
       void this.commands.handle(this.client, message);
+    });
+
+    this.client.on('voiceStateUpdate', (oldState, newState) => {
+      this.voice.handleVoiceStateUpdate(oldState, newState);
     });
 
     this.client.on('error', (err) => console.error('Discord client error:', err));

@@ -1,7 +1,5 @@
+import 'dotenv/config';
 import 'reflect-metadata';
-import { config as loadEnv } from 'dotenv';
-
-loadEnv();
 
 import { container } from 'tsyringe';
 import { Bot } from './core/Bot';

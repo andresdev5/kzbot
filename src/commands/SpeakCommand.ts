@@ -1,18 +1,10 @@
-import {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  AudioPlayerStatus,
-  entersState,
-  VoiceConnectionStatus,
-  StreamType,
-} from '@discordjs/voice';
 import { ChannelType, GuildMember } from 'discord.js';
 import { inject, injectable } from 'tsyringe';
 import { BaseCommand } from './BaseCommand';
 import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
 import { PollyService } from '../core/PollyService';
+import { VoiceManager } from '../core/VoiceManager';
 
 @injectable()
 export class SpeakCommand extends BaseCommand {
@@ -22,7 +14,10 @@ export class SpeakCommand extends BaseCommand {
   readonly category = CommandCategory.Voice;
   readonly usage = 'speak <text>';
 
-  constructor(@inject(PollyService) private readonly polly: PollyService) {
+  constructor(
+    @inject(PollyService) private readonly polly: PollyService,
+    @inject(VoiceManager) private readonly voice: VoiceManager,
+  ) {
     super();
   }
 
@@ -33,34 +28,21 @@ export class SpeakCommand extends BaseCommand {
     }
 
     const member = message.member as GuildMember | null;
-    const voiceChannel = member?.voice.channel;
-    if (!voiceChannel || voiceChannel.type !== ChannelType.GuildVoice) {
+    const channel = member?.voice.channel;
+    if (!channel || channel.type !== ChannelType.GuildVoice) {
       await message.reply('You must be in a voice channel.');
       return;
     }
 
-    const audioStream = await this.polly.synthesize({ text: rawArgs });
-
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: true,
-    });
+    const { filePath, cached } = await this.polly.synthesizeToFile({ text: rawArgs });
+    console.debug(`[polly] ${cached ? 'cache hit' : 'cache miss'}: ${filePath}`);
 
     try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
-
-      const player = createAudioPlayer();
-      const resource = createAudioResource(audioStream, { inputType: StreamType.Arbitrary });
-
-      connection.subscribe(player);
-      player.play(resource);
-
-      await entersState(player, AudioPlayerStatus.Playing, 10_000);
-      await entersState(player, AudioPlayerStatus.Idle, 10 * 60_000);
-    } finally {
-      connection.destroy();
+      await this.voice.play(channel, filePath);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      await message.reply(`Voice playback failed: ${reason}`).catch(() => undefined);
+      throw err;
     }
   }
 }
