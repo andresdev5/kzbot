@@ -79,7 +79,7 @@ export class CommandContext {
       return;
     }
     if (this.message?.channel.isSendable()) {
-      await this.message.channel.sendTyping().catch(() => undefined);
+      void this.message.channel.sendTyping().catch(() => undefined);
     }
   }
 

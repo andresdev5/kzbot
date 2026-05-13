@@ -5,6 +5,7 @@ import { CommandCategory } from '../enums/CommandCategory';
 import { CommandContext } from '../models/CommandContext';
 import { SlashCommandConfig } from '../models/SlashCommandConfig';
 import { Config } from '../core/Config';
+import { Logger } from '../core/Logger';
 import { PollyService } from '../core/PollyService';
 import { VoiceManager } from '../core/VoiceManager';
 import { findVoice } from '../models/VoiceCatalog';
@@ -24,6 +25,7 @@ export class SpeakCommand extends BaseCommand {
   readonly category = CommandCategory.Voice;
   readonly usage = 'speak [:VoiceName] <text>';
   readonly slash: SlashCommandConfig;
+  readonly runOnEdit = true;
 
   private readonly maxTextLength: number;
 
@@ -31,6 +33,7 @@ export class SpeakCommand extends BaseCommand {
     @inject(Config) config: Config,
     @inject(PollyService) private readonly polly: PollyService,
     @inject(VoiceManager) private readonly voice: VoiceManager,
+    @inject(Logger) private readonly logger: Logger,
   ) {
     super();
     this.maxTextLength = config.get<number>('polly.maxTextLength');
@@ -55,14 +58,22 @@ export class SpeakCommand extends BaseCommand {
   }
 
   async execute(ctx: CommandContext): Promise<void> {
+    this.logger.debug(`[speak] start source=${ctx.source} rawArgs=${JSON.stringify(ctx.rawArgs)}`);
     const parsed = this.readArgs(ctx);
     if ('error' in parsed) {
+      this.logger.debug(`[speak] readArgs error: ${parsed.error}`);
       await ctx.reply(parsed.error);
       return;
     }
+    this.logger.debug(
+      `[speak] parsed voice=${parsed.voice ?? '<default>'} text=${JSON.stringify(parsed.text)}`,
+    );
 
     const member = await ctx.getMember();
     const channel = member?.voice.channel;
+    this.logger.debug(
+      `[speak] member=${member?.user.tag ?? 'null'} voiceChannel=${channel?.name ?? 'null'} channelType=${channel?.type ?? 'null'}`,
+    );
     if (!channel || channel.type !== ChannelType.GuildVoice) {
       await ctx.reply('You must be in a voice channel.');
       return;
@@ -77,18 +88,21 @@ export class SpeakCommand extends BaseCommand {
       text: finalText,
       voice: parsed.voice,
     });
-    console.debug(
+    this.logger.debug(
       `[polly] ${result.cached ? 'cache hit' : 'cache miss'} (${result.voice}): ${result.filePath}`,
     );
 
     try {
+      this.logger.debug(`[speak] calling voice.play in #${channel.name}`);
       await this.voice.play(channel, result.filePath);
+      this.logger.debug(`[speak] voice.play resolved`);
       const note = wasTruncated
         ? ` (truncated to ${this.maxTextLength} chars)`
         : '';
       await ctx.reply(`Speaking with \`${result.voice}\`${note}.`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[speak] voice.play threw:`, err);
       await ctx.reply(`Voice playback failed: ${reason}`);
       throw err;
     }

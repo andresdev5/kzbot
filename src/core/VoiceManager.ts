@@ -12,11 +12,14 @@ import {
   joinVoiceChannel,
 } from '@discordjs/voice';
 import { VoiceBasedChannel, VoiceState } from 'discord.js';
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
+import { Logger } from './Logger';
 
 @injectable()
 export class VoiceManager {
   private readonly players = new Map<string, AudioPlayer>();
+
+  constructor(@inject(Logger) private readonly logger: Logger) {}
 
   async play(channel: VoiceBasedChannel, filePath: string): Promise<void> {
     const connection = await this.ensureConnection(channel);
@@ -65,7 +68,7 @@ export class VoiceManager {
 
     const humans = channel.members.filter((m) => !m.user.bot);
     if (humans.size === 0) {
-      console.log(`[voice] no humans in #${channel.name}, disconnecting`);
+      this.logger.info(`[voice] no humans in #${channel.name}, disconnecting`);
       this.leave(guildId);
     }
   }
@@ -94,7 +97,7 @@ export class VoiceManager {
     });
 
     connection.on('stateChange', (oldS, newS) => {
-      console.debug(
+      this.logger.debug(
         `[voice] connection (${channel.guild.id}): ${oldS.status} -> ${newS.status}`,
       );
       if (newS.status === VoiceConnectionStatus.Destroyed) {
@@ -102,7 +105,7 @@ export class VoiceManager {
         this.players.delete(channel.guild.id);
       }
     });
-    connection.on('error', (err) => console.error('[voice error]', err));
+    connection.on('error', (err) => this.logger.error('[voice error]', err));
 
     await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
     return connection;
@@ -115,7 +118,7 @@ export class VoiceManager {
     const player = createAudioPlayer({
       behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
     });
-    player.on('error', (err) => console.error('[voice player error]', err));
+    player.on('error', (err) => this.logger.error('[voice player error]', err));
     this.players.set(guildId, player);
     return player;
   }

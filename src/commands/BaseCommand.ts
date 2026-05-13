@@ -10,6 +10,7 @@ export abstract class BaseCommand implements ICommand {
   readonly category: CommandCategory = CommandCategory.General;
   readonly usage?: string;
   readonly slash?: SlashCommandConfig;
+  readonly runOnEdit: boolean = false;
 
   abstract execute(context: CommandContext): Promise<void>;
 }

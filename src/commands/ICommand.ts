@@ -9,6 +9,7 @@ export interface ICommand {
   readonly category: CommandCategory;
   readonly usage?: string;
   readonly slash?: SlashCommandConfig;
+  readonly runOnEdit?: boolean;
 
   execute(context: CommandContext): Promise<void>;
 }

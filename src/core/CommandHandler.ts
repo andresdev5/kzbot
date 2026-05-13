@@ -1,8 +1,15 @@
-import { ChatInputCommandInteraction, Client, Message, RESTPostAPIChatInputApplicationCommandsJSONBody } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  Client,
+  Message,
+  PartialMessage,
+  RESTPostAPIChatInputApplicationCommandsJSONBody,
+} from 'discord.js';
 import { container, inject, injectable } from 'tsyringe';
 import { ICommand } from '../commands/ICommand';
 import { CommandContext } from '../models/CommandContext';
 import { Config } from './Config';
+import { Logger } from './Logger';
 import { buildSlashCommands } from './SlashBuilder';
 
 export const COMMAND_TOKEN = Symbol.for('ICommand');
@@ -20,7 +27,10 @@ export class CommandHandler {
   private readonly commands = new Map<string, ICommand>();
   private readonly aliases = new Map<string, string>();
 
-  constructor(@inject(Config) private readonly config: Config) {}
+  constructor(
+    @inject(Config) private readonly config: Config,
+    @inject(Logger) private readonly logger: Logger,
+  ) {}
 
   registerAll(): void {
     const registered = container.isRegistered(COMMAND_TOKEN)
@@ -67,11 +77,23 @@ export class CommandHandler {
   }
 
   async handle(client: Client, message: Message): Promise<void> {
-    if (message.author.bot || !message.content) return;
+    if (message.author.bot) return;
+    this.logger.debug(
+      `[msg] from=${message.author.tag} guild=${message.guildId ?? 'dm'} contentLen=${message.content.length} content=${JSON.stringify(message.content)}`,
+    );
+    if (!message.content) return;
 
     const dispatch =
       this.matchPrefix(message.content) ?? this.matchAliasPrefix(message.content);
-    if (!dispatch) return;
+    if (!dispatch) {
+      this.logger.debug(
+        `[msg] no dispatch matched. prefix=${JSON.stringify(this.config.get('bot.prefix'))} aliasPrefixes=${JSON.stringify(this.config.getOrDefault('bot.aliasPrefixes', {}))}`,
+      );
+      return;
+    }
+    this.logger.debug(
+      `[msg] dispatching command=${dispatch.command.name} via prefix=${JSON.stringify(dispatch.prefix)}`,
+    );
 
     const ctx = CommandContext.fromMessage(
       client,
@@ -92,11 +114,58 @@ export class CommandHandler {
     await this.run(command, ctx);
   }
 
+  async handleEdit(
+    client: Client,
+    oldMessage: Message | PartialMessage,
+    newMessage: Message | PartialMessage,
+  ): Promise<void> {
+    let resolved: Message;
+    if (newMessage.partial) {
+      try {
+        resolved = await newMessage.fetch();
+      } catch {
+        return;
+      }
+    } else {
+      resolved = newMessage;
+    }
+
+    if (resolved.author?.bot) return;
+    if (!resolved.content) return;
+    if (!oldMessage.partial && oldMessage.content === resolved.content) return;
+
+    const dispatch =
+      this.matchPrefix(resolved.content) ?? this.matchAliasPrefix(resolved.content);
+    if (!dispatch) return;
+
+    if (!dispatch.command.runOnEdit) {
+      this.logger.debug(
+        `[edit] command "${dispatch.command.name}" does not opt-in to runOnEdit, skipping`,
+      );
+      return;
+    }
+
+    this.logger.debug(
+      `[edit] dispatching command=${dispatch.command.name} via prefix=${JSON.stringify(dispatch.prefix)}`,
+    );
+
+    const ctx = CommandContext.fromMessage(
+      client,
+      resolved,
+      dispatch.args,
+      dispatch.rawArgs,
+      dispatch.prefix,
+      dispatch.invokedName,
+    );
+
+    await this.run(dispatch.command, ctx);
+  }
+
   private async run(command: ICommand, ctx: CommandContext): Promise<void> {
     try {
       await command.execute(ctx);
     } catch (err) {
-      console.error(`Error executing command "${command.name}":`, err);
+      this.logger.error(`Error executing command "${command.name}":`, err);
       await ctx.reply('There was an error executing that command.').catch(() => undefined);
     }
   }

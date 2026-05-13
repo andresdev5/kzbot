@@ -28,9 +28,16 @@ export interface CacheSection {
   dbPath: string;
 }
 
+export type LogLevel = 'DEBUG' | 'INFO' | 'ERROR';
+
+export interface LoggingSection {
+  level: LogLevel;
+}
+
 export interface AppConfig {
   bot: BotSection;
   aws: AwsSection;
   polly: PollySection;
   cache: CacheSection;
+  logging: LoggingSection;
 }
