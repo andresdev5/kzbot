@@ -12,10 +12,10 @@ import {
   joinVoiceChannel,
 } from '@discordjs/voice';
 import { VoiceBasedChannel, VoiceState } from 'discord.js';
-import { inject, injectable } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
 import { Logger } from './Logger';
 
-@injectable()
+@singleton()
 export class VoiceManager {
   private readonly players = new Map<string, AudioPlayer>();
 
@@ -29,6 +29,28 @@ export class VoiceManager {
     const resource = createAudioResource(filePath, { inputType: StreamType.Arbitrary });
     player.play(resource);
     await entersState(player, AudioPlayerStatus.Playing, 15_000);
+  }
+
+  async playSequence(channel: VoiceBasedChannel, filePaths: string[]): Promise<void> {
+    if (filePaths.length === 0) return;
+    if (filePaths.length === 1) {
+      await this.play(channel, filePaths[0]);
+      return;
+    }
+
+    const connection = await this.ensureConnection(channel);
+    const player = this.ensurePlayer(channel.guild.id);
+    connection.subscribe(player);
+
+    for (let i = 0; i < filePaths.length; i++) {
+      const resource = createAudioResource(filePaths[i], { inputType: StreamType.Arbitrary });
+      player.play(resource);
+      await entersState(player, AudioPlayerStatus.Playing, 15_000);
+      if (i < filePaths.length - 1) {
+        await entersState(player, AudioPlayerStatus.Idle, 5 * 60_000);
+        this.logger.debug(`[voice] segment ${i + 1}/${filePaths.length} finished`);
+      }
+    }
   }
 
   stop(guildId: string): boolean {

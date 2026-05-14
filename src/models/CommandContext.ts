@@ -1,4 +1,6 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
@@ -11,6 +13,7 @@ export type ContextSource = 'message' | 'interaction';
 export interface ReplyPayload {
   content?: string;
   embeds?: EmbedBuilder[];
+  components?: ActionRowBuilder<ButtonBuilder>[];
 }
 
 export class CommandContext {
@@ -98,5 +101,23 @@ export class CommandContext {
     if (this.message) {
       await this.message.reply(opts).catch(() => undefined);
     }
+  }
+
+  async send(payload: string | ReplyPayload): Promise<Message | null> {
+    const opts = typeof payload === 'string' ? { content: payload } : payload;
+    if (this.interaction) {
+      if (this.interaction.deferred) {
+        return (await this.interaction.editReply(opts)) as Message;
+      }
+      if (this.interaction.replied) {
+        return (await this.interaction.followUp(opts)) as Message;
+      }
+      return (await this.interaction.reply({ ...opts, withResponse: true }))
+        .resource?.message as Message | null ?? null;
+    }
+    if (this.message) {
+      return this.message.reply(opts).catch(() => null);
+    }
+    return null;
   }
 }

@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { inject, injectable } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
 import { Config } from './Config';
 
-@injectable()
+@singleton()
 export class DatabaseProvider {
   readonly db: Database.Database;
 

@@ -1,14 +1,15 @@
 import type Database from 'better-sqlite3';
-import { inject, injectable } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
 import { DatabaseProvider } from './DatabaseProvider';
 
 export const SETTING_DEFAULT_VOICE = 'polly.defaultVoice';
+export const SETTING_FISH_DEFAULT_REFERENCE_ID = 'fish.defaultReferenceId';
 
 interface SettingRow {
   value: string;
 }
 
-@injectable()
+@singleton()
 export class SettingsService {
   private readonly getStmt: Database.Statement<[string], SettingRow>;
   private readonly upsertStmt: Database.Statement<[string, string]>;

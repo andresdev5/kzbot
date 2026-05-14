@@ -5,7 +5,7 @@ import {
   PartialMessage,
   RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord.js';
-import { container, inject, injectable } from 'tsyringe';
+import { container, inject, singleton } from 'tsyringe';
 import { ICommand } from '../commands/ICommand';
 import { CommandContext } from '../models/CommandContext';
 import { Config } from './Config';
@@ -22,7 +22,7 @@ interface PrefixDispatch {
   rawArgs: string;
 }
 
-@injectable()
+@singleton()
 export class CommandHandler {
   private readonly commands = new Map<string, ICommand>();
   private readonly aliases = new Map<string, string>();

@@ -2,7 +2,7 @@ import { BotSection } from '../models/BotConfig';
 
 function parseAliasPrefixes(raw: string | undefined): Record<string, string> {
   const result: Record<string, string> = {};
-  if (!raw) return { "'": 'speak' };
+  if (!raw) return { "'": 'speak', '$': 'fish' };
 
   for (const entry of raw.split(',')) {
     const trimmed = entry.trim();

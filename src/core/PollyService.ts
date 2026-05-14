@@ -1,6 +1,6 @@
 import { PollyClient, SynthesizeSpeechCommand, Engine } from '@aws-sdk/client-polly';
 import { Readable } from 'node:stream';
-import { inject, injectable } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
 import { PollyLanguage, PollyOutputFormat, PollyVoice } from '../enums/PollyVoice';
 import { findVoice } from '../models/VoiceCatalog';
 import { Config } from './Config';
@@ -21,7 +21,7 @@ export interface SynthesizeResult {
   voice: PollyVoice;
 }
 
-@injectable()
+@singleton()
 export class PollyService {
   private readonly client: PollyClient;
 

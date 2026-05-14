@@ -3,6 +3,7 @@ import { botConfig } from './bot.config';
 import { awsConfig, pollyConfig } from './aws.config';
 import { cacheConfig } from './cache.config';
 import { loggingConfig } from './logging.config';
+import { fishConfig } from './fish.config';
 
 export const appConfig: AppConfig = {
   bot: botConfig,
@@ -10,4 +11,5 @@ export const appConfig: AppConfig = {
   polly: pollyConfig,
   cache: cacheConfig,
   logging: loggingConfig,
+  fish: fishConfig,
 };

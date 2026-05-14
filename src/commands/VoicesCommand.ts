@@ -9,11 +9,11 @@ import { PollyService } from '../core/PollyService';
 
 @injectable()
 export class VoicesCommand extends BaseCommand {
-  readonly name = 'voices';
-  readonly aliases = ['vs', 'listvoices'];
+  readonly name = 'pollyvoices';
+  readonly aliases = ['pv', 'listpollyvoices'];
   readonly description = 'Lists all available Polly Standard voices';
   readonly category = CommandCategory.Voice;
-  readonly usage = 'voices';
+  readonly usage = 'pollyvoices';
   readonly slash: SlashCommandConfig = {};
 
   constructor(@inject(PollyService) private readonly polly: PollyService) {
@@ -35,7 +35,8 @@ export class VoicesCommand extends BaseCommand {
     const embed = new EmbedBuilder()
       .setTitle(`Polly Standard Voices (${VOICE_CATALOG.length})`)
       .setDescription(
-        `Current default: \`${current}\`. Change with \`${ctx.prefix}voice <name>\`.\n\n` +
+        `Current default: \`${current}\`. Change with \`${ctx.prefix}voice <name>\`. ` +
+          `For Fish Audio voices use \`${ctx.prefix}voices\`.\n\n` +
           lines.join('\n'),
       )
       .setColor(0x5865f2);

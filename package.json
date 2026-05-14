@@ -19,6 +19,7 @@
     "discord.js": "^14.26.4",
     "dotenv": "^16.4.7",
     "ffmpeg-static": "^5.2.0",
+    "fish-audio": "^0.1.0",
     "opusscript": "^0.0.8",
     "reflect-metadata": "^0.2.2",
     "tsx": "^4.19.2",

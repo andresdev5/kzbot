@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { inject, injectable } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
 import { Config } from './Config';
 import { DatabaseProvider } from './DatabaseProvider';
 import { CacheEntry, CacheLookupKey } from '../models/CacheEntry';
@@ -18,7 +18,7 @@ interface CacheRow {
   created_at: string;
 }
 
-@injectable()
+@singleton()
 export class AudioCacheService {
   private readonly audioDir: string;
   private readonly enabled: boolean;

@@ -1,8 +1,8 @@
-import { injectable } from 'tsyringe';
+import { singleton } from 'tsyringe';
 import { AppConfig } from '../models/BotConfig';
 import { appConfig } from '../config';
 
-@injectable()
+@singleton()
 export class Config {
   private readonly source: AppConfig;
 

@@ -1,4 +1,4 @@
-import { inject, injectable } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
 import { LogLevel } from '../models/BotConfig';
 import { Config } from './Config';
 
@@ -8,7 +8,7 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
   ERROR: 2,
 };
 
-@injectable()
+@singleton()
 export class Logger {
   private readonly minPriority: number;
   private readonly level: LogLevel;

@@ -28,6 +28,17 @@ export interface CacheSection {
   dbPath: string;
 }
 
+export type FishAudioModel = 's1' | 's2-pro';
+export type FishAudioFormat = 'mp3' | 'wav' | 'pcm' | 'opus';
+
+export interface FishAudioSection {
+  apiKey: string;
+  model: FishAudioModel;
+  format: FishAudioFormat;
+  maxTextLength: number;
+  baseUrl: string;
+}
+
 export type LogLevel = 'DEBUG' | 'INFO' | 'ERROR';
 
 export interface LoggingSection {
@@ -40,4 +51,5 @@ export interface AppConfig {
   polly: PollySection;
   cache: CacheSection;
   logging: LoggingSection;
+  fish: FishAudioSection;
 }
