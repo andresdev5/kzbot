@@ -1,0 +1,21 @@
+services:
+  kzbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kzbot:latest
+    container_name: kzbot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - kzbot-cache:/app/cache
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  kzbot-cache:
