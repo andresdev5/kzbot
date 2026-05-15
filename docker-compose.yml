@@ -6,6 +6,7 @@ services:
     image: kzbot:latest
     container_name: kzbot
     restart: unless-stopped
+    network_mode: host
     env_file:
       - .env
     volumes:
