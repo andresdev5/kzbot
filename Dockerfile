@@ -14,7 +14,8 @@ RUN npm ci --include=dev
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    NODE_OPTIONS="--dns-result-order=ipv4first"
 
 RUN groupadd --system --gid 1001 nodejs \
  && useradd  --system --uid 1001 --gid nodejs --create-home --shell /usr/sbin/nologin nodejs \
