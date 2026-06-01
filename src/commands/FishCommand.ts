@@ -16,6 +16,7 @@ import { Logger } from '../core/Logger';
 
 const LEADING_ALIAS_TAG = /^\s*\[([^\]]+)\]\s*:?\s*/;
 const LEADING_TAG = /^\s*<([^>]+)>\s*:?\s*/;
+const SEGMENT_TAG = /<([^:>]+):([^>]+)>/g;
 
 interface FishArgs {
   referenceId?: string;
@@ -25,13 +26,25 @@ interface FishArgs {
   text: string;
 }
 
+interface FishSegment {
+  /** Raw voice token (alias, reference id, or search query). Undefined uses the default voice. */
+  token?: string;
+  text: string;
+}
+
+interface ResolvedToken {
+  referenceId?: string;
+  label: string;
+}
+
 @injectable()
 export class FishCommand extends BaseCommand {
   readonly name = 'fish';
   readonly aliases = ['f'];
-  readonly description = 'Speak using Fish Audio TTS (supports <reference_id> or <query> prefix)';
+  readonly description =
+    'Speak using Fish Audio TTS (supports <reference_id> or <query> prefix, and <voice:text> multi-voice)';
   readonly category = CommandCategory.Voice;
-  readonly usage = 'fish [<reference_id|query>] <text>';
+  readonly usage = 'fish [<reference_id|query>] <text> — supports <voice:fragment> for multi-voice';
   readonly runOnEdit = true;
   readonly slash: SlashCommandConfig;
 
@@ -62,18 +75,28 @@ export class FishCommand extends BaseCommand {
   }
 
   async execute(ctx: CommandContext): Promise<void> {
+    const rawText =
+      ctx.source === 'interaction'
+        ? ctx.interaction!.options.getString('text', true)
+        : ctx.rawArgs;
+
+    if (FishCommand.isMultiVoice(rawText)) {
+      await this.executeMulti(ctx, rawText);
+      return;
+    }
+
+    await this.executeSingle(ctx);
+  }
+
+  private async executeSingle(ctx: CommandContext): Promise<void> {
     const parsed = this.readArgs(ctx);
     if ('error' in parsed) {
       await ctx.reply(parsed.error);
       return;
     }
 
-    const member = await ctx.getMember();
-    const channel = member?.voice.channel;
-    if (!channel || channel.type !== ChannelType.GuildVoice) {
-      await ctx.reply('You must be in a voice channel.');
-      return;
-    }
+    const channel = await this.resolveVoiceChannel(ctx);
+    if (!channel) return;
 
     const max = this.fish.getMaxTextLength();
     const wasTruncated = parsed.text.length > max;
@@ -166,6 +189,197 @@ export class FishCommand extends BaseCommand {
       await ctx.reply(`Fish Audio TTS failed: ${reason}`);
       throw err;
     }
+  }
+
+  private async executeMulti(ctx: CommandContext, rawText: string): Promise<void> {
+    const channel = await this.resolveVoiceChannel(ctx);
+    if (!channel) return;
+
+    const segments = FishCommand.buildSegments(rawText);
+    if (segments.length === 0) {
+      await ctx.reply('Provide some text to speak.');
+      return;
+    }
+
+    const max = this.fish.getMaxTextLength();
+    const totalLen = segments.reduce((n, s) => n + s.text.length, 0);
+    const wasTruncated = totalLen > max;
+    const finalSegments = wasTruncated ? FishCommand.truncateSegments(segments, max) : segments;
+    if (finalSegments.length === 0) {
+      await ctx.reply('Provide some text to speak.');
+      return;
+    }
+
+    await ctx.defer();
+
+    // Resolve the default voice (slash `voice` option, then stored default).
+    const defaultVoiceArg =
+      ctx.source === 'interaction'
+        ? ctx.interaction!.options.getString('voice')?.trim() || undefined
+        : undefined;
+    let defaultReferenceId: string | undefined;
+    if (defaultVoiceArg) {
+      const resolved = await this.resolveToken(defaultVoiceArg);
+      if ('error' in resolved) {
+        await ctx.reply(resolved.error);
+        return;
+      }
+      defaultReferenceId = resolved.referenceId;
+    } else {
+      defaultReferenceId = this.fish.getDefaultReferenceId();
+    }
+
+    // Resolve each unique voice token once.
+    const resolvedTokens = new Map<string, ResolvedToken>();
+    for (const seg of finalSegments) {
+      if (!seg.token || resolvedTokens.has(seg.token)) continue;
+      const resolved = await this.resolveToken(seg.token);
+      if ('error' in resolved) {
+        await ctx.reply(resolved.error);
+        return;
+      }
+      resolvedTokens.set(seg.token, resolved);
+    }
+
+    try {
+      const results = await Promise.all(
+        finalSegments.map((seg) => {
+          const referenceId = seg.token
+            ? resolvedTokens.get(seg.token)!.referenceId
+            : defaultReferenceId;
+          return this.fish.synthesizeToFile({ text: seg.text, referenceId });
+        }),
+      );
+      for (const r of results) {
+        this.logger.debug(
+          `[fish] ${r.cached ? 'cache hit' : 'cache miss'} (${r.referenceId || '<default>'}) -> ${r.filePath}`,
+        );
+      }
+
+      const filePaths = results.map((r) => r.filePath);
+      this.logger.debug(`[fish] playing ${filePaths.length} segment(s) in #${channel.name}`);
+      await this.voice.playSequence(channel, filePaths);
+
+      const labels = FishCommand.uniquePreserveOrder(
+        finalSegments.map((seg) =>
+          seg.token ? resolvedTokens.get(seg.token)!.label : defaultReferenceId ? `\`${defaultReferenceId}\`` : '_(default)_',
+        ),
+      );
+      const voiceList = labels.join(', ');
+      const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
+      await ctx.reply(`Speaking with ${voiceList}${truncNote}.`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error('[fish] multi-voice synthesize failed:', err);
+      await ctx.reply(`Fish Audio TTS failed: ${reason}`);
+      throw err;
+    }
+  }
+
+  private async resolveVoiceChannel(ctx: CommandContext) {
+    const member = await ctx.getMember();
+    const channel = member?.voice.channel;
+    if (!channel || channel.type !== ChannelType.GuildVoice) {
+      await ctx.reply('You must be in a voice channel.');
+      return null;
+    }
+    return channel;
+  }
+
+  /** Resolve a voice token (alias, reference id, or search query) to a reference id + display label. */
+  private async resolveToken(token: string): Promise<ResolvedToken | { error: string }> {
+    const alias = this.registry.getAlias(token);
+    if (alias) {
+      return { referenceId: alias.referenceId, label: `[${alias.alias}] (\`${alias.referenceId}\`)` };
+    }
+
+    if (FishAudioService.isReferenceId(token)) {
+      const aliasMatch = this.registry.aliasesFor(token)[0];
+      if (aliasMatch) return { referenceId: token, label: `[${aliasMatch.alias}] (\`${token}\`)` };
+      const cached = await this.fish.getVoiceById(token).catch(() => null);
+      return { referenceId: token, label: cached ? `${cached.title} (\`${token}\`)` : `\`${token}\`` };
+    }
+
+    try {
+      const result = await this.fish.searchVoices(token);
+      if (result.items.length === 0) {
+        return { error: `No Fish Audio voices found for \`${token}\`.` };
+      }
+      const first = result.items[0];
+      return { referenceId: first.id, label: `${first.title} (\`${first.id}\`)` };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error('[fish] multi-voice search failed:', err);
+      return { error: `Search failed for \`${token}\`: ${reason}` };
+    }
+  }
+
+  /**
+   * Multi-voice mode triggers when the text has 2+ `<token:fragment>` segments, or a single one
+   * whose token is not a 32-hex reference id (which would be the `<reference_id:alias>` save form).
+   */
+  private static isMultiVoice(raw: string): boolean {
+    if (!raw) return false;
+    const tags = FishCommand.segmentTags(raw);
+    if (tags.length >= 2) return true;
+    return tags.length === 1 && !FishAudioService.isReferenceId(tags[0]);
+  }
+
+  private static segmentTags(input: string): string[] {
+    const tokens: string[] = [];
+    SEGMENT_TAG.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = SEGMENT_TAG.exec(input)) !== null) {
+      tokens.push(match[1].trim());
+    }
+    return tokens;
+  }
+
+  private static buildSegments(input: string): FishSegment[] {
+    const segments: FishSegment[] = [];
+    SEGMENT_TAG.lastIndex = 0;
+    let lastIdx = 0;
+    let match: RegExpExecArray | null;
+    while ((match = SEGMENT_TAG.exec(input)) !== null) {
+      const before = input.slice(lastIdx, match.index).trim();
+      if (before) segments.push({ text: before });
+
+      const token = match[1].trim();
+      const text = match[2].trim();
+      if (text) segments.push({ token: token || undefined, text });
+      lastIdx = SEGMENT_TAG.lastIndex;
+    }
+    const tail = input.slice(lastIdx).trim();
+    if (tail) segments.push({ text: tail });
+    return segments;
+  }
+
+  private static truncateSegments(segments: FishSegment[], max: number): FishSegment[] {
+    const result: FishSegment[] = [];
+    let remaining = max;
+    for (const seg of segments) {
+      if (remaining <= 0) break;
+      if (seg.text.length <= remaining) {
+        result.push(seg);
+        remaining -= seg.text.length;
+      } else {
+        result.push({ ...seg, text: seg.text.slice(0, remaining) });
+        remaining = 0;
+      }
+    }
+    return result;
+  }
+
+  private static uniquePreserveOrder(items: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of items) {
+      if (!seen.has(item)) {
+        seen.add(item);
+        out.push(item);
+      }
+    }
+    return out;
   }
 
   private readArgs(ctx: CommandContext): FishArgs | { error: string } {
