@@ -65,9 +65,9 @@ export class FishClipRegistryService {
   private readonly insertClipStmt: Database.Statement<[string, string, string]>;
   private readonly findClipByHashStmt: Database.Statement<[string], ClipRow>;
   private readonly getClipStmt: Database.Statement<[number], ClipRow>;
-  private readonly insertAliasStmt: Database.Statement<[string, string, string, number, string]>;
-  private readonly findAliasStmt: Database.Statement<[string, string], ClipAliasRow>;
-  private readonly listAliasesStmt: Database.Statement<[string], ClipAliasRow>;
+  private readonly insertAliasStmt: Database.Statement<[string, string, number, string, string]>;
+  private readonly findAliasStmt: Database.Statement<[string], ClipAliasRow>;
+  private readonly listAliasesStmt: Database.Statement<[], ClipAliasRow>;
 
   constructor(@inject(DatabaseProvider) database: DatabaseProvider) {
     database.db.exec(`
@@ -79,12 +79,11 @@ export class FishClipRegistryService {
       );
 
       CREATE TABLE IF NOT EXISTS fish_clip_aliases (
-        user_id TEXT NOT NULL,
-        alias_normalized TEXT NOT NULL,
+        alias_normalized TEXT PRIMARY KEY,
         alias_original TEXT NOT NULL,
         clip_uid INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (user_id, alias_normalized)
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_fish_clip_aliases_uid ON fish_clip_aliases(clip_uid);
     `);
@@ -99,14 +98,14 @@ export class FishClipRegistryService {
     );
     this.getClipStmt = database.db.prepare('SELECT * FROM fish_clips WHERE uid = ?');
     this.insertAliasStmt = database.db.prepare(
-      `INSERT INTO fish_clip_aliases (user_id, alias_normalized, alias_original, clip_uid, created_at)
+      `INSERT INTO fish_clip_aliases (alias_normalized, alias_original, clip_uid, user_id, created_at)
        VALUES (?, ?, ?, ?, ?)`,
     );
     this.findAliasStmt = database.db.prepare(
-      'SELECT * FROM fish_clip_aliases WHERE user_id = ? AND alias_normalized = ?',
+      'SELECT * FROM fish_clip_aliases WHERE alias_normalized = ?',
     );
     this.listAliasesStmt = database.db.prepare(
-      'SELECT * FROM fish_clip_aliases WHERE user_id = ? ORDER BY alias_normalized ASC',
+      'SELECT * FROM fish_clip_aliases ORDER BY alias_normalized ASC',
     );
   }
 
@@ -131,7 +130,7 @@ export class FishClipRegistryService {
     if (!this.getClip(clipUid)) throw new ClipNotFoundError(clipUid);
 
     const normalized = trimmed.toLowerCase();
-    const existing = this.findAliasStmt.get(userId, normalized);
+    const existing = this.findAliasStmt.get(normalized);
     if (existing) {
       if (existing.clip_uid === clipUid) {
         return FishClipRegistryService.rowToAlias(existing);
@@ -139,27 +138,27 @@ export class FishClipRegistryService {
       throw new ClipAliasTakenError(existing.alias_original, existing.clip_uid);
     }
     const createdAt = new Date().toISOString();
-    this.insertAliasStmt.run(userId, normalized, trimmed, clipUid, createdAt);
+    this.insertAliasStmt.run(normalized, trimmed, clipUid, userId, createdAt);
     return { userId, alias: trimmed, aliasNormalized: normalized, clipUid, createdAt };
   }
 
-  getAlias(userId: string, alias: string): FishClipAlias | null {
-    const row = this.findAliasStmt.get(userId, alias.trim().toLowerCase());
+  getAlias(alias: string): FishClipAlias | null {
+    const row = this.findAliasStmt.get(alias.trim().toLowerCase());
     return row ? FishClipRegistryService.rowToAlias(row) : null;
   }
 
-  /** Resolve a `{token}` to a clip for a user: numeric token is a uid, otherwise their clip alias. */
-  resolveClip(userId: string, token: string): FishClip | null {
+  /** Resolve a `{token}` to a clip (global): numeric token is a uid, otherwise a clip alias. */
+  resolveClip(token: string): FishClip | null {
     const trimmed = token.trim();
     if (/^\d+$/.test(trimmed)) {
       return this.getClip(Number(trimmed));
     }
-    const alias = this.getAlias(userId, trimmed);
+    const alias = this.getAlias(trimmed);
     return alias ? this.getClip(alias.clipUid) : null;
   }
 
-  listAliases(userId: string): FishClipAlias[] {
-    return this.listAliasesStmt.all(userId).map(FishClipRegistryService.rowToAlias);
+  listAliases(): FishClipAlias[] {
+    return this.listAliasesStmt.all().map(FishClipRegistryService.rowToAlias);
   }
 
   private static rowToClip(row: ClipRow): FishClip {

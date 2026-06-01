@@ -66,7 +66,7 @@ export class FishAliasCommand extends BaseCommand {
     try {
       const saved = this.clips.setAlias(ctx.userId, alias, uid);
       await ctx.reply(
-        `Saved your clip alias \`${saved.alias}\` → uid \`${uid}\`. Replay it with \`${ctx.prefix}fish {${saved.alias}}\`.`,
+        `Saved clip alias \`${saved.alias}\` → uid \`${uid}\`. Anyone can replay it with \`${ctx.prefix}fish {${saved.alias}}\`.`,
       );
     } catch (err) {
       if (err instanceof InvalidClipAliasError) {
@@ -79,7 +79,7 @@ export class FishAliasCommand extends BaseCommand {
       }
       if (err instanceof ClipAliasTakenError) {
         await ctx.reply(
-          `You already use alias \`${err.alias}\` for uid \`${err.existingClipUid}\`. Pick a different name.`,
+          `Alias \`${err.alias}\` is already taken (uid \`${err.existingClipUid}\`). Pick a different name.`,
         );
         return;
       }

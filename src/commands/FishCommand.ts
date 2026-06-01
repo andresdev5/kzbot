@@ -103,7 +103,7 @@ export class FishCommand extends BaseCommand {
     const channel = await this.resolveVoiceChannel(ctx);
     if (!channel) return;
 
-    const clip = this.clips.resolveClip(ctx.userId, token);
+    const clip = this.clips.resolveClip(token);
     if (!clip || clip.segments.length === 0) {
       await ctx.reply(`No saved clip for \`{${token}}\`. Save one with \`${ctx.prefix}fishalias <uid> <alias>\`.`);
       return;
