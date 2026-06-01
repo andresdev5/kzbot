@@ -1,5 +1,6 @@
 import { container } from 'tsyringe';
 import { COMMAND_TOKEN } from '../core/CommandHandler';
+import { FishAliasCommand } from './FishAliasCommand';
 import { FishCommand } from './FishCommand';
 import { FishDefaultCommand } from './FishDefaultCommand';
 import { FishIdCommand } from './FishIdCommand';
@@ -25,5 +26,6 @@ export function registerCommands(): void {
   container.register(COMMAND_TOKEN, { useClass: FishVoicesCommand });
   container.register(COMMAND_TOKEN, { useClass: FishIdCommand });
   container.register(COMMAND_TOKEN, { useClass: FishIdListCommand });
+  container.register(COMMAND_TOKEN, { useClass: FishAliasCommand });
   container.register(COMMAND_TOKEN, { useClass: HelpCommand });
 }

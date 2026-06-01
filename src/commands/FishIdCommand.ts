@@ -14,7 +14,6 @@ import { Logger } from '../core/Logger';
 @injectable()
 export class FishIdCommand extends BaseCommand {
   readonly name = 'fishid';
-  readonly aliases = ['fishalias'];
   readonly description = 'Save a memorable alias for a Fish Audio reference_id';
   readonly category = CommandCategory.Voice;
   readonly usage = 'fishid <reference_id> <alias>';

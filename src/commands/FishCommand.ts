@@ -12,11 +12,13 @@ import {
   InvalidAliasError,
 } from '../core/FishVoiceRegistryService';
 import { VoiceManager } from '../core/VoiceManager';
+import { FishClipRegistryService, FishClipSegment } from '../core/FishClipRegistryService';
 import { Logger } from '../core/Logger';
 
 const LEADING_ALIAS_TAG = /^\s*\[([^\]]+)\]\s*:?\s*/;
 const LEADING_TAG = /^\s*<([^>]+)>\s*:?\s*/;
 const SEGMENT_TAG = /<([^:>]+):([^>]+)>/g;
+const CLIP_REPLAY = /^\s*\{([^}]+)\}\s*$/;
 
 interface FishArgs {
   referenceId?: string;
@@ -42,15 +44,17 @@ export class FishCommand extends BaseCommand {
   readonly name = 'fish';
   readonly aliases = ['f'];
   readonly description =
-    'Speak using Fish Audio TTS (supports <reference_id> or <query> prefix, and <voice:text> multi-voice)';
+    'Speak using Fish Audio TTS (supports <reference_id>/<query> prefix, <voice:text> multi-voice, and {alias} clip replay)';
   readonly category = CommandCategory.Voice;
-  readonly usage = 'fish [<reference_id|query>] <text> — supports <voice:fragment> for multi-voice';
+  readonly usage =
+    'fish [<reference_id|query>] <text> — <voice:fragment> for multi-voice, {alias} to replay a saved clip';
   readonly runOnEdit = true;
   readonly slash: SlashCommandConfig;
 
   constructor(
     @inject(FishAudioService) private readonly fish: FishAudioService,
     @inject(FishVoiceRegistryService) private readonly registry: FishVoiceRegistryService,
+    @inject(FishClipRegistryService) private readonly clips: FishClipRegistryService,
     @inject(VoiceManager) private readonly voice: VoiceManager,
     @inject(Logger) private readonly logger: Logger,
   ) {
@@ -60,7 +64,7 @@ export class FishCommand extends BaseCommand {
         {
           type: 'string',
           name: 'text',
-          description: `Text to speak (max ${this.fish.getMaxTextLength()} chars).`,
+          description: `Text to speak (max ${this.fish.getMaxTextLength()} chars). Use {alias} to replay a saved clip.`,
           required: true,
           maxLength: this.fish.getMaxTextLength(),
         },
@@ -80,12 +84,52 @@ export class FishCommand extends BaseCommand {
         ? ctx.interaction!.options.getString('text', true)
         : ctx.rawArgs;
 
+    const replayMatch = rawText.match(CLIP_REPLAY);
+    if (replayMatch) {
+      await this.executeReplay(ctx, replayMatch[1].trim());
+      return;
+    }
+
     if (FishCommand.isMultiVoice(rawText)) {
       await this.executeMulti(ctx, rawText);
       return;
     }
 
     await this.executeSingle(ctx);
+  }
+
+  /** Replay a previously played clip referenced by `{alias}` or `{uid}` (scoped to the user). */
+  private async executeReplay(ctx: CommandContext, token: string): Promise<void> {
+    const channel = await this.resolveVoiceChannel(ctx);
+    if (!channel) return;
+
+    const clip = this.clips.resolveClip(ctx.userId, token);
+    if (!clip || clip.segments.length === 0) {
+      await ctx.reply(`No saved clip for \`{${token}}\`. Save one with \`${ctx.prefix}fishalias <uid> <alias>\`.`);
+      return;
+    }
+
+    await ctx.defer();
+
+    try {
+      const results = await Promise.all(
+        clip.segments.map((seg) =>
+          this.fish.synthesizeToFile({
+            text: seg.text,
+            referenceId: seg.referenceId || undefined,
+          }),
+        ),
+      );
+      const filePaths = results.map((r) => r.filePath);
+      this.logger.debug(`[fish] replay clip uid=${clip.uid} segments=${filePaths.length}`);
+      await this.voice.playSequence(channel, filePaths);
+      await ctx.reply(`Replaying clip \`{${token}}\` (uid \`${clip.uid}\`).`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error('[fish] replay failed:', err);
+      await ctx.reply(`Fish Audio replay failed: ${reason}`);
+      throw err;
+    }
   }
 
   private async executeSingle(ctx: CommandContext): Promise<void> {
@@ -180,9 +224,10 @@ export class FishCommand extends BaseCommand {
       );
       await this.voice.play(channel, result.filePath);
 
+      const uidNote = this.recordClip([{ referenceId: referenceId ?? '', text: finalText }]);
       const voiceNote = voiceLabel ?? '_(no reference, model defaults)_';
       const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
-      await ctx.reply(`Speaking with ${voiceNote}${truncNote}${savedAliasNote ?? ''}.`);
+      await ctx.reply(`Speaking with ${voiceNote}${truncNote}${savedAliasNote ?? ''}.${uidNote}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] synthesize failed:', err);
@@ -260,6 +305,12 @@ export class FishCommand extends BaseCommand {
       this.logger.debug(`[fish] playing ${filePaths.length} segment(s) in #${channel.name}`);
       await this.voice.playSequence(channel, filePaths);
 
+      const clipSegments: FishClipSegment[] = finalSegments.map((seg) => ({
+        referenceId: (seg.token ? resolvedTokens.get(seg.token)!.referenceId : defaultReferenceId) ?? '',
+        text: seg.text,
+      }));
+      const uidNote = this.recordClip(clipSegments);
+
       const labels = FishCommand.uniquePreserveOrder(
         finalSegments.map((seg) =>
           seg.token ? resolvedTokens.get(seg.token)!.label : defaultReferenceId ? `\`${defaultReferenceId}\`` : '_(default)_',
@@ -267,12 +318,23 @@ export class FishCommand extends BaseCommand {
       );
       const voiceList = labels.join(', ');
       const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
-      await ctx.reply(`Speaking with ${voiceList}${truncNote}.`);
+      await ctx.reply(`Speaking with ${voiceList}${truncNote}.${uidNote}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] multi-voice synthesize failed:', err);
       await ctx.reply(`Fish Audio TTS failed: ${reason}`);
       throw err;
+    }
+  }
+
+  /** Persist the played clip and return the ` | uid: \`N\`` note to append to the reply. */
+  private recordClip(segments: FishClipSegment[]): string {
+    try {
+      const clip = this.clips.recordClip(segments);
+      return ` | uid: \`${clip.uid}\``;
+    } catch (err) {
+      this.logger.error('[fish] failed to record clip:', err);
+      return '';
     }
   }
 

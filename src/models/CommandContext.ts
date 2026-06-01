@@ -68,6 +68,10 @@ export class CommandContext {
     return this.message?.guildId ?? this.interaction?.guildId ?? null;
   }
 
+  get userId(): string {
+    return this.interaction?.user.id ?? this.message?.author.id ?? '';
+  }
+
   async getMember(): Promise<GuildMember | null> {
     if (this.message) return this.message.member;
     const interaction = this.interaction;
