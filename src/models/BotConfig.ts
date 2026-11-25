@@ -28,12 +28,19 @@ export interface CacheSection {
   dbPath: string;
 }
 
-export type FishAudioModel = 's1' | 's2-pro';
+export type FishAudioModel =
+  | 's1'
+  | 's2-pro'
+  | 's2.1-pro'
+  | 's2.1-pro-free'
+  | 'drama-3'
+  | 's3-pro';
 export type FishAudioFormat = 'mp3' | 'wav' | 'pcm' | 'opus';
 
 export interface FishAudioSection {
   apiKey: string;
   model: FishAudioModel;
+  fallbackModel: FishAudioModel | null;
   format: FishAudioFormat;
   maxTextLength: number;
   baseUrl: string;

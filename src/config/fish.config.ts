@@ -1,7 +1,16 @@
 import { FishAudioFormat, FishAudioModel, FishAudioSection } from '../models/BotConfig';
 
 const DEFAULT_MAX_TEXT_LENGTH = 1000;
-const VALID_MODELS: FishAudioModel[] = ['s1', 's2-pro'];
+const DEFAULT_MODEL: FishAudioModel = 'drama-3';
+const DEFAULT_FALLBACK_MODEL: FishAudioModel = 's2.1-pro';
+const VALID_MODELS: FishAudioModel[] = [
+  's1',
+  's2-pro',
+  's2.1-pro',
+  's2.1-pro-free',
+  'drama-3',
+  's3-pro',
+];
 const VALID_FORMATS: FishAudioFormat[] = ['mp3', 'wav', 'pcm', 'opus'];
 
 function parseMaxTextLength(raw: string | undefined): number {
@@ -11,9 +20,20 @@ function parseMaxTextLength(raw: string | undefined): number {
   return parsed;
 }
 
+function isValidModel(raw: string): raw is FishAudioModel {
+  return (VALID_MODELS as string[]).includes(raw);
+}
+
 function parseModel(raw: string | undefined): FishAudioModel {
-  if (!raw) return 's2-pro';
-  return (VALID_MODELS as string[]).includes(raw) ? (raw as FishAudioModel) : 's2-pro';
+  const value = raw?.trim();
+  return value && isValidModel(value) ? value : DEFAULT_MODEL;
+}
+
+function parseFallbackModel(raw: string | undefined, primary: FishAudioModel): FishAudioModel | null {
+  const value = raw?.trim();
+  if (value === 'none') return null;
+  const fallback = value && isValidModel(value) ? value : DEFAULT_FALLBACK_MODEL;
+  return fallback === primary ? null : fallback;
 }
 
 function parseFormat(raw: string | undefined): FishAudioFormat {
@@ -21,9 +41,12 @@ function parseFormat(raw: string | undefined): FishAudioFormat {
   return (VALID_FORMATS as string[]).includes(raw) ? (raw as FishAudioFormat) : 'mp3';
 }
 
+const model = parseModel(process.env.FISH_AUDIO_MODEL);
+
 export const fishConfig: FishAudioSection = {
   apiKey: process.env.FISH_AUDIO_API_KEY ?? '',
-  model: parseModel(process.env.FISH_AUDIO_MODEL),
+  model,
+  fallbackModel: parseFallbackModel(process.env.FISH_AUDIO_FALLBACK_MODEL, model),
   format: parseFormat(process.env.FISH_AUDIO_FORMAT),
   maxTextLength: parseMaxTextLength(process.env.FISH_AUDIO_MAX_TEXT_LENGTH),
   baseUrl: process.env.FISH_AUDIO_BASE_URL ?? 'https://api.fish.audio',

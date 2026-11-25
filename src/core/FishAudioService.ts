@@ -49,6 +49,7 @@ export class FishAudioService {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly model: FishAudioModel;
+  private readonly fallbackModel: FishAudioModel | null;
   private readonly format: FishAudioFormat;
   private readonly maxTextLength: number;
 
@@ -62,6 +63,7 @@ export class FishAudioService {
     this.apiKey = config.get<string>('fish.apiKey');
     this.baseUrl = config.get<string>('fish.baseUrl');
     this.model = config.get<FishAudioModel>('fish.model');
+    this.fallbackModel = config.getOrDefault<FishAudioModel | null>('fish.fallbackModel', null);
     this.format = config.get<FishAudioFormat>('fish.format');
     this.maxTextLength = config.get<number>('fish.maxTextLength');
   }
@@ -142,16 +144,32 @@ export class FishAudioService {
   }
 
   async synthesizeToFile(options: FishSynthesizeOptions): Promise<FishSynthesizeResult> {
+    try {
+      return await this.synthesizeWithModel(options, this.model);
+    } catch (err) {
+      if (!this.fallbackModel || !this.apiKey) throw err;
+      this.logger.error(
+        `[fish] model=${this.model} failed, retrying with fallback model=${this.fallbackModel}:`,
+        err,
+      );
+      return this.synthesizeWithModel(options, this.fallbackModel);
+    }
+  }
+
+  private async synthesizeWithModel(
+    options: FishSynthesizeOptions,
+    model: FishAudioModel,
+  ): Promise<FishSynthesizeResult> {
     const referenceId = options.referenceId ?? '';
     const cacheKey = {
       referenceId,
       text: options.text,
-      model: this.model,
+      model,
       format: this.format,
     };
     const hit = this.cache.find(cacheKey);
     if (hit) {
-      return { filePath: hit.filePath, cached: true, referenceId, model: this.model };
+      return { filePath: hit.filePath, cached: true, referenceId, model };
     }
 
     this.assertApiKey();
@@ -163,24 +181,26 @@ export class FishAudioService {
 
     const url = new URL('/v1/tts', this.baseUrl);
     this.logger.debug(
-      `[fish] POST ${url.toString()} reference_id=${referenceId || '<none>'} model=${this.model}`,
+      `[fish] POST ${url.toString()} reference_id=${referenceId || '<none>'} model=${model}`,
     );
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
-        model: this.model,
+        model,
       },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
       const errBody = await response.text();
-      throw new Error(`Fish Audio TTS failed (${response.status}): ${errBody.slice(0, 200)}`);
+      throw new Error(
+        `Fish Audio TTS failed (${response.status}, model ${model}): ${errBody.slice(0, 200)}`,
+      );
     }
     const buffer = Buffer.from(await response.arrayBuffer());
     const entry = this.cache.save(cacheKey, buffer);
-    return { filePath: entry.filePath, cached: false, referenceId, model: this.model };
+    return { filePath: entry.filePath, cached: false, referenceId, model };
   }
 
   private assertApiKey(): void {
