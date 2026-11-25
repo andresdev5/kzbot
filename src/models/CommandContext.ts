@@ -22,9 +22,35 @@ const ROLE_MENTION = /<@&(\d+)>/g;
 const CHANNEL_MENTION = /<#(\d+)>/g;
 const CUSTOM_EMOJI = /<a?:\w+:\d+>/g;
 const SYNTAX_CHARS = /[<>[\]{}]/g;
+const LEGAL_SYMBOLS = /[©®℠™]/g;
+const OVERLAY_MARKS =/[̲-̸⃒⃓⃥⃦]/g;
+const DECORATIVE_SYMBOLS = /[\p{Extended_Pictographic}\p{So}\p{Cf}\u{1F3FB}-\u{1F3FF}︀-️⃣]/gu;
+const SMALL_CAPS: Record<string, string> = {
+  ᴀ: 'a', ʙ: 'b', ᴄ: 'c', ᴅ: 'd', ᴇ: 'e', ꜰ: 'f', ɢ: 'g', ʜ: 'h', ɪ: 'i', ᴊ: 'j',
+  ᴋ: 'k', ʟ: 'l', ᴍ: 'm', ɴ: 'n', ᴏ: 'o', ᴘ: 'p', ǫ: 'q', ʀ: 'r', ꜱ: 's', ᴛ: 't',
+  ᴜ: 'u', ᴠ: 'v', ᴡ: 'w', ʏ: 'y', ᴢ: 'z',
+};
+const SMALL_CAPS_CHARS = new RegExp(`[${Object.keys(SMALL_CAPS).join('')}]`, 'g');
 
 function speakableName(name: string | null | undefined): string {
-  return (name ?? '').replace(SYNTAX_CHARS, '').replace(/_+/g, ' ').trim();
+  return (name ?? '')
+    .replace(LEGAL_SYMBOLS, ' ')
+    .normalize('NFKC')
+    .replace(SMALL_CAPS_CHARS, (c) => SMALL_CAPS[c])
+    .replace(OVERLAY_MARKS, '')
+    .replace(DECORATIVE_SYMBOLS, ' ')
+    .replace(SYNTAX_CHARS, '')
+    .replace(/_+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function firstSpeakable(...names: Array<string | null | undefined>): string {
+  for (const name of names) {
+    const speakable = speakableName(name);
+    if (speakable) return speakable;
+  }
+  return '';
 }
 
 export interface ReplyPayload {
@@ -125,11 +151,13 @@ export class CommandContext {
     const member =
       this.message?.mentions.members?.get(id) ??
       (guild ? await guild.members.fetch(id).catch(() => null) : null);
-    if (member) return speakableName(member.displayName);
+    if (member) {
+      return firstSpeakable(member.displayName, member.user.globalName, member.user.username);
+    }
     const user =
       this.message?.mentions.users.get(id) ??
       (await this.client.users.fetch(id).catch(() => null));
-    return speakableName(user?.displayName);
+    return firstSpeakable(user?.displayName, user?.globalName, user?.username);
   }
 
   async defer(options: DeferOptions = {}): Promise<void> {
