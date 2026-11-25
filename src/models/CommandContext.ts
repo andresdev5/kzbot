@@ -33,6 +33,7 @@ export class CommandContext {
     public readonly invokedName: string,
     public readonly message: Message | null,
     public readonly interaction: ChatInputCommandInteraction | null,
+    public readonly preset: string | null,
   ) {}
 
   static fromMessage(
@@ -42,6 +43,7 @@ export class CommandContext {
     rawArgs: string,
     prefix: string,
     invokedName: string,
+    preset?: string,
   ): CommandContext {
     return new CommandContext(
       client,
@@ -52,6 +54,7 @@ export class CommandContext {
       invokedName,
       message,
       null,
+      preset ?? null,
     );
   }
 
@@ -68,6 +71,7 @@ export class CommandContext {
       interaction.commandName,
       null,
       interaction,
+      null,
     );
   }
 

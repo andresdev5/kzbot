@@ -10,6 +10,7 @@ import { FishAudioFormat, FishAudioModel } from '../models/BotConfig';
 export interface FishSynthesizeOptions {
   text: string;
   referenceId?: string;
+  model?: FishAudioModel;
 }
 
 export interface FishSynthesizeResult {
@@ -144,6 +145,9 @@ export class FishAudioService {
   }
 
   async synthesizeToFile(options: FishSynthesizeOptions): Promise<FishSynthesizeResult> {
+    if (options.model) {
+      return this.synthesizeWithModel(options, options.model);
+    }
     try {
       return await this.synthesizeWithModel(options, this.model);
     } catch (err) {

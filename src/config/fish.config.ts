@@ -20,19 +20,19 @@ function parseMaxTextLength(raw: string | undefined): number {
   return parsed;
 }
 
-function isValidModel(raw: string): raw is FishAudioModel {
+export function isFishAudioModel(raw: string): raw is FishAudioModel {
   return (VALID_MODELS as string[]).includes(raw);
 }
 
 function parseModel(raw: string | undefined): FishAudioModel {
   const value = raw?.trim();
-  return value && isValidModel(value) ? value : DEFAULT_MODEL;
+  return value && isFishAudioModel(value) ? value : DEFAULT_MODEL;
 }
 
 function parseFallbackModel(raw: string | undefined, primary: FishAudioModel): FishAudioModel | null {
   const value = raw?.trim();
   if (value === 'none') return null;
-  const fallback = value && isValidModel(value) ? value : DEFAULT_FALLBACK_MODEL;
+  const fallback = value && isFishAudioModel(value) ? value : DEFAULT_FALLBACK_MODEL;
   return fallback === primary ? null : fallback;
 }
 

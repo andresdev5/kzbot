@@ -1,18 +1,32 @@
-import { BotSection } from '../models/BotConfig';
+import { AliasPrefixTarget, BotSection } from '../models/BotConfig';
 
-function parseAliasPrefixes(raw: string | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!raw) return { "'": 'speak', '$': 'fish' };
+const DEFAULT_ALIAS_PREFIXES: Record<string, AliasPrefixTarget> = {
+  "'": { command: 'speak' },
+  $: { command: 'fish' },
+  $$: { command: 'fish', preset: 's2-pro' },
+};
 
+function parseAliasTarget(raw: string): AliasPrefixTarget | null {
+  const colon = raw.indexOf(':');
+  const command = (colon > -1 ? raw.slice(0, colon) : raw).trim().toLowerCase();
+  const preset = colon > -1 ? raw.slice(colon + 1).trim() : '';
+  if (!command) return null;
+  return preset ? { command, preset } : { command };
+}
+
+function parseAliasPrefixes(raw: string | undefined): Record<string, AliasPrefixTarget> {
+  if (!raw) return { ...DEFAULT_ALIAS_PREFIXES };
+
+  const result: Record<string, AliasPrefixTarget> = {};
   for (const entry of raw.split(',')) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
     const eq = trimmed.indexOf('=');
     if (eq <= 0) continue;
     const prefix = trimmed.slice(0, eq);
-    const command = trimmed.slice(eq + 1).trim().toLowerCase();
-    if (!prefix || !command) continue;
-    result[prefix] = command;
+    const target = parseAliasTarget(trimmed.slice(eq + 1));
+    if (!prefix || !target) continue;
+    result[prefix] = target;
   }
   return result;
 }

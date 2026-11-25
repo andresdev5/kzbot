@@ -1,11 +1,16 @@
 import { PollyLanguage, PollyOutputFormat, PollyVoice } from '../enums/PollyVoice';
 
+export interface AliasPrefixTarget {
+  command: string;
+  preset?: string;
+}
+
 export interface BotSection {
   token: string;
   clientId: string;
   prefix: string;
   ownerIds: string[];
-  aliasPrefixes: Record<string, string>;
+  aliasPrefixes: Record<string, AliasPrefixTarget>;
   devGuildId: string;
 }
 

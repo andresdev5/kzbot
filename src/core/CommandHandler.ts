@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import { container, inject, singleton } from 'tsyringe';
 import { ICommand } from '../commands/ICommand';
+import { AliasPrefixTarget } from '../models/BotConfig';
 import { CommandContext } from '../models/CommandContext';
 import { Config } from './Config';
 import { Logger } from './Logger';
@@ -20,6 +21,7 @@ interface PrefixDispatch {
   invokedName: string;
   args: string[];
   rawArgs: string;
+  preset?: string;
 }
 
 @singleton()
@@ -102,6 +104,7 @@ export class CommandHandler {
       dispatch.rawArgs,
       dispatch.prefix,
       dispatch.invokedName,
+      dispatch.preset,
     );
 
     await this.run(dispatch.command, ctx);
@@ -156,6 +159,7 @@ export class CommandHandler {
       dispatch.rawArgs,
       dispatch.prefix,
       dispatch.invokedName,
+      dispatch.preset,
     );
 
     await this.run(dispatch.command, ctx);
@@ -188,7 +192,7 @@ export class CommandHandler {
   }
 
   private matchAliasPrefix(content: string): PrefixDispatch | null {
-    const aliasPrefixes = this.config.getOrDefault<Record<string, string>>(
+    const aliasPrefixes = this.config.getOrDefault<Record<string, AliasPrefixTarget>>(
       'bot.aliasPrefixes',
       {},
     );
@@ -196,11 +200,12 @@ export class CommandHandler {
     const sorted = Object.keys(aliasPrefixes).sort((a, b) => b.length - a.length);
     for (const prefix of sorted) {
       if (!content.startsWith(prefix)) continue;
-      const command = this.resolve(aliasPrefixes[prefix]);
+      const target = aliasPrefixes[prefix];
+      const command = this.resolve(target.command);
       if (!command) continue;
       const rawArgs = content.slice(prefix.length).trim();
       const args = rawArgs ? rawArgs.split(/\s+/) : [];
-      return { command, prefix, invokedName: command.name, args, rawArgs };
+      return { command, prefix, invokedName: command.name, args, rawArgs, preset: target.preset };
     }
     return null;
   }

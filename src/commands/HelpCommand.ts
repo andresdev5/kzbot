@@ -3,6 +3,7 @@ import { inject, injectable } from 'tsyringe';
 import { BaseCommand } from './BaseCommand';
 import { ICommand } from './ICommand';
 import { CommandCategory } from '../enums/CommandCategory';
+import { AliasPrefixTarget } from '../models/BotConfig';
 import { CommandContext } from '../models/CommandContext';
 import { SlashCommandConfig, SlashOption } from '../models/SlashCommandConfig';
 import { CommandHandler } from '../core/CommandHandler';
@@ -88,12 +89,12 @@ export class HelpCommand extends BaseCommand {
       sections.push(`**${CATEGORY_LABEL[cat]}**\n${lines}`);
     }
 
-    const aliasPrefixes = this.config.getOrDefault<Record<string, string>>(
+    const aliasPrefixes = this.config.getOrDefault<Record<string, AliasPrefixTarget>>(
       'bot.aliasPrefixes',
       {},
     );
     const aliasLines = Object.entries(aliasPrefixes)
-      .map(([p, cmd]) => `\`${p}\` → \`${prefix}${cmd}\``)
+      .map(([p, target]) => `\`${p}\` → ${HelpCommand.formatAliasTarget(prefix, target)}`)
       .join(', ');
 
     return new EmbedBuilder()
@@ -125,8 +126,7 @@ export class HelpCommand extends BaseCommand {
 
     const prefixAliases = this.findPrefixAliases(command);
     if (prefixAliases.length > 0) {
-      const formatted = prefixAliases.map((p) => `\`${p}\``).join(', ');
-      lines.push(`**Prefix shortcuts** ${formatted}`);
+      lines.push(`**Prefix shortcuts** ${prefixAliases.join(', ')}`);
     }
 
     if (command.slash) {
@@ -145,11 +145,16 @@ export class HelpCommand extends BaseCommand {
   }
 
   private findPrefixAliases(command: ICommand): string[] {
-    const map = this.config.getOrDefault<Record<string, string>>('bot.aliasPrefixes', {});
+    const map = this.config.getOrDefault<Record<string, AliasPrefixTarget>>('bot.aliasPrefixes', {});
     const names = new Set<string>([command.name, ...command.aliases]);
     return Object.entries(map)
-      .filter(([, target]) => names.has(target))
-      .map(([p]) => p);
+      .filter(([, target]) => names.has(target.command))
+      .map(([p, target]) => (target.preset ? `\`${p}\` (\`${target.preset}\`)` : `\`${p}\``));
+  }
+
+  private static formatAliasTarget(prefix: string, target: AliasPrefixTarget): string {
+    const base = `\`${prefix}${target.command}\``;
+    return target.preset ? `${base} (\`${target.preset}\`)` : base;
   }
 
   private static formatSlashSection(command: ICommand, prefix: string): string[] {

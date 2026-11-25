@@ -2,9 +2,11 @@ import { ChannelType } from 'discord.js';
 import { inject, injectable } from 'tsyringe';
 import { BaseCommand } from './BaseCommand';
 import { CommandCategory } from '../enums/CommandCategory';
+import { FishAudioModel } from '../models/BotConfig';
 import { CommandContext } from '../models/CommandContext';
 import { SlashCommandConfig } from '../models/SlashCommandConfig';
-import { FishAudioService } from '../core/FishAudioService';
+import { isFishAudioModel } from '../config/fish.config';
+import { FishAudioService, FishSynthesizeResult } from '../core/FishAudioService';
 import {
   AliasTakenError,
   ALIAS_REGEX,
@@ -84,22 +86,33 @@ export class FishCommand extends BaseCommand {
         ? ctx.interaction!.options.getString('text', true)
         : ctx.rawArgs;
 
+    if (ctx.preset && !isFishAudioModel(ctx.preset)) {
+      this.logger.error(`[fish] prefix preset "${ctx.preset}" is not a valid Fish Audio model`);
+      await ctx.reply(`Unknown Fish Audio model \`${ctx.preset}\` configured for prefix \`${ctx.prefix}\`.`);
+      return;
+    }
+    const model = ctx.preset && isFishAudioModel(ctx.preset) ? ctx.preset : undefined;
+
     const replayMatch = rawText.match(CLIP_REPLAY);
     if (replayMatch) {
-      await this.executeReplay(ctx, replayMatch[1].trim());
+      await this.executeReplay(ctx, replayMatch[1].trim(), model);
       return;
     }
 
     if (FishCommand.isMultiVoice(rawText)) {
-      await this.executeMulti(ctx, rawText);
+      await this.executeMulti(ctx, rawText, model);
       return;
     }
 
-    await this.executeSingle(ctx);
+    await this.executeSingle(ctx, model);
   }
 
   /** Replay a previously played clip referenced by `{alias}` or `{uid}` (scoped to the user). */
-  private async executeReplay(ctx: CommandContext, token: string): Promise<void> {
+  private async executeReplay(
+    ctx: CommandContext,
+    token: string,
+    model: FishAudioModel | undefined,
+  ): Promise<void> {
     const channel = await this.resolveVoiceChannel(ctx);
     if (!channel) return;
 
@@ -117,13 +130,16 @@ export class FishCommand extends BaseCommand {
           this.fish.synthesizeToFile({
             text: seg.text,
             referenceId: seg.referenceId || undefined,
+            model,
           }),
         ),
       );
       const filePaths = results.map((r) => r.filePath);
       this.logger.debug(`[fish] replay clip uid=${clip.uid} segments=${filePaths.length}`);
       await this.voice.playSequence(channel, filePaths);
-      await ctx.replyPrivately(`Replaying clip \`{${token}}\` (uid \`${clip.uid}\`).`);
+      await ctx.replyPrivately(
+        `Replaying clip \`{${token}}\` (uid \`${clip.uid}\`).${FishCommand.modelNote(results)}`,
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] replay failed:', err);
@@ -132,7 +148,7 @@ export class FishCommand extends BaseCommand {
     }
   }
 
-  private async executeSingle(ctx: CommandContext): Promise<void> {
+  private async executeSingle(ctx: CommandContext, model: FishAudioModel | undefined): Promise<void> {
     const parsed = this.readArgs(ctx);
     if ('error' in parsed) {
       await ctx.reply(parsed.error);
@@ -218,7 +234,7 @@ export class FishCommand extends BaseCommand {
       this.logger.debug(
         `[fish] synthesize reference_id=${referenceId ?? '<none>'} len=${finalText.length}`,
       );
-      const result = await this.fish.synthesizeToFile({ text: finalText, referenceId });
+      const result = await this.fish.synthesizeToFile({ text: finalText, referenceId, model });
       this.logger.debug(
         `[fish] ${result.cached ? 'cache hit' : 'cache miss'} -> ${result.filePath}`,
       );
@@ -227,7 +243,9 @@ export class FishCommand extends BaseCommand {
       const uidNote = this.recordClip([{ referenceId: referenceId ?? '', text: finalText }]);
       const voiceNote = voiceLabel ?? '_(no reference, model defaults)_';
       const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
-      await ctx.replyPrivately(`Speaking with ${voiceNote}${truncNote}${savedAliasNote ?? ''}.${uidNote}`);
+      await ctx.replyPrivately(
+        `Speaking with ${voiceNote}${truncNote}${savedAliasNote ?? ''}.${uidNote}${FishCommand.modelNote([result])}`,
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] synthesize failed:', err);
@@ -236,7 +254,11 @@ export class FishCommand extends BaseCommand {
     }
   }
 
-  private async executeMulti(ctx: CommandContext, rawText: string): Promise<void> {
+  private async executeMulti(
+    ctx: CommandContext,
+    rawText: string,
+    model: FishAudioModel | undefined,
+  ): Promise<void> {
     const channel = await this.resolveVoiceChannel(ctx);
     if (!channel) return;
 
@@ -292,7 +314,7 @@ export class FishCommand extends BaseCommand {
           const referenceId = seg.token
             ? resolvedTokens.get(seg.token)!.referenceId
             : defaultReferenceId;
-          return this.fish.synthesizeToFile({ text: seg.text, referenceId });
+          return this.fish.synthesizeToFile({ text: seg.text, referenceId, model });
         }),
       );
       for (const r of results) {
@@ -318,7 +340,9 @@ export class FishCommand extends BaseCommand {
       );
       const voiceList = labels.join(', ');
       const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
-      await ctx.replyPrivately(`Speaking with ${voiceList}${truncNote}.${uidNote}`);
+      await ctx.replyPrivately(
+        `Speaking with ${voiceList}${truncNote}.${uidNote}${FishCommand.modelNote(results)}`,
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] multi-voice synthesize failed:', err);
@@ -430,6 +454,11 @@ export class FishCommand extends BaseCommand {
       }
     }
     return result;
+  }
+
+  private static modelNote(results: FishSynthesizeResult[]): string {
+    const models = FishCommand.uniquePreserveOrder(results.map((r) => r.model));
+    return models.length > 0 ? ` | model: ${models.map((m) => `\`${m}\``).join(', ')}` : '';
   }
 
   private static uniquePreserveOrder(items: string[]): string[] {
