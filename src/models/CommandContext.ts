@@ -6,9 +6,16 @@ import {
   EmbedBuilder,
   GuildMember,
   Message,
+  MessageFlags,
 } from 'discord.js';
 
 export type ContextSource = 'message' | 'interaction';
+
+export interface DeferOptions {
+  ephemeral?: boolean;
+}
+
+const PRIVATE_MESSAGE_REPLY_TTL_MS = 5_000;
 
 export interface ReplyPayload {
   content?: string;
@@ -80,9 +87,11 @@ export class CommandContext {
     return interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   }
 
-  async defer(): Promise<void> {
+  async defer(options: DeferOptions = {}): Promise<void> {
     if (this.interaction && !this.interaction.deferred && !this.interaction.replied) {
-      await this.interaction.deferReply();
+      await this.interaction.deferReply(
+        options.ephemeral ? { flags: MessageFlags.Ephemeral } : undefined,
+      );
       return;
     }
     if (this.message?.channel.isSendable()) {
@@ -104,6 +113,28 @@ export class CommandContext {
     }
     if (this.message) {
       await this.message.reply(opts).catch(() => undefined);
+    }
+  }
+
+  async replyPrivately(payload: string | ReplyPayload): Promise<void> {
+    const opts = typeof payload === 'string' ? { content: payload } : payload;
+    if (this.interaction) {
+      if (this.interaction.deferred) {
+        await this.interaction.editReply(opts);
+      } else if (this.interaction.replied) {
+        await this.interaction.followUp({ ...opts, flags: MessageFlags.Ephemeral });
+      } else {
+        await this.interaction.reply({ ...opts, flags: MessageFlags.Ephemeral });
+      }
+      return;
+    }
+    if (this.message) {
+      const sent = await this.message.reply(opts).catch(() => null);
+      if (sent) {
+        setTimeout(() => {
+          void sent.delete().catch(() => undefined);
+        }, PRIVATE_MESSAGE_REPLY_TTL_MS);
+      }
     }
   }
 

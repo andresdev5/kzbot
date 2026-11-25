@@ -109,7 +109,7 @@ export class FishCommand extends BaseCommand {
       return;
     }
 
-    await ctx.defer();
+    await ctx.defer({ ephemeral: true });
 
     try {
       const results = await Promise.all(
@@ -123,7 +123,7 @@ export class FishCommand extends BaseCommand {
       const filePaths = results.map((r) => r.filePath);
       this.logger.debug(`[fish] replay clip uid=${clip.uid} segments=${filePaths.length}`);
       await this.voice.playSequence(channel, filePaths);
-      await ctx.reply(`Replaying clip \`{${token}}\` (uid \`${clip.uid}\`).`);
+      await ctx.replyPrivately(`Replaying clip \`{${token}}\` (uid \`${clip.uid}\`).`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] replay failed:', err);
@@ -146,7 +146,7 @@ export class FishCommand extends BaseCommand {
     const wasTruncated = parsed.text.length > max;
     const finalText = wasTruncated ? parsed.text.slice(0, max) : parsed.text;
 
-    await ctx.defer();
+    await ctx.defer({ ephemeral: true });
 
     let referenceId = parsed.referenceId;
     let voiceLabel: string | undefined;
@@ -227,7 +227,7 @@ export class FishCommand extends BaseCommand {
       const uidNote = this.recordClip([{ referenceId: referenceId ?? '', text: finalText }]);
       const voiceNote = voiceLabel ?? '_(no reference, model defaults)_';
       const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
-      await ctx.reply(`Speaking with ${voiceNote}${truncNote}${savedAliasNote ?? ''}.${uidNote}`);
+      await ctx.replyPrivately(`Speaking with ${voiceNote}${truncNote}${savedAliasNote ?? ''}.${uidNote}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] synthesize failed:', err);
@@ -255,7 +255,7 @@ export class FishCommand extends BaseCommand {
       return;
     }
 
-    await ctx.defer();
+    await ctx.defer({ ephemeral: true });
 
     // Resolve the default voice (slash `voice` option, then stored default).
     const defaultVoiceArg =
@@ -318,7 +318,7 @@ export class FishCommand extends BaseCommand {
       );
       const voiceList = labels.join(', ');
       const truncNote = wasTruncated ? ` (truncated to ${max} chars)` : '';
-      await ctx.reply(`Speaking with ${voiceList}${truncNote}.${uidNote}`);
+      await ctx.replyPrivately(`Speaking with ${voiceList}${truncNote}.${uidNote}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error('[fish] multi-voice synthesize failed:', err);

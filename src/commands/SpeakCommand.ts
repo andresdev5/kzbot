@@ -93,7 +93,7 @@ export class SpeakCommand extends BaseCommand {
       return;
     }
 
-    await ctx.defer();
+    await ctx.defer({ ephemeral: true });
 
     const results = await Promise.all(
       finalSegments.map((s) =>
@@ -122,7 +122,7 @@ export class SpeakCommand extends BaseCommand {
       const note = wasTruncated ? ` (truncated to ${this.maxTextLength} chars)` : '';
       const voiceList =
         voicesUsed.length === 1 ? `\`${voicesUsed[0]}\`` : voicesUsed.map((v) => `\`${v}\``).join(', ');
-      await ctx.reply(`Speaking with ${voiceList}${note}.`);
+      await ctx.replyPrivately(`Speaking with ${voiceList}${note}.`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error(`[speak] playback failed:`, err);
