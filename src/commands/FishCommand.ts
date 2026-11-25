@@ -494,12 +494,13 @@ export class FishCommand extends BaseCommand {
     const aliasMatch = raw.match(LEADING_ALIAS_TAG);
     if (aliasMatch) {
       const alias = aliasMatch[1].trim();
-      const text = raw.slice(aliasMatch[0].length).trim();
-      if (!text) return { error: 'Provide some text to speak after the alias.' };
-      if (!ALIAS_REGEX.test(alias)) {
-        return { error: `Invalid alias \`${alias}\`. Allowed: a-zA-Z0-9_-, no spaces.` };
+      if (ALIAS_REGEX.test(alias) && this.registry.getAlias(alias)) {
+        const text = raw.slice(aliasMatch[0].length).trim();
+        if (!text) return { error: 'Provide some text to speak after the alias.' };
+        return { aliasLookup: alias, text };
       }
-      return { aliasLookup: alias, text };
+      this.logger.debug(`[fish] leading [${alias}] is not a saved alias, sending it as text`);
+      return { text: raw.trim() };
     }
 
     const tagMatch = raw.match(LEADING_TAG);
