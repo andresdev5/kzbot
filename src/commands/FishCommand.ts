@@ -81,10 +81,11 @@ export class FishCommand extends BaseCommand {
   }
 
   async execute(ctx: CommandContext): Promise<void> {
-    const rawText =
+    const rawText = await ctx.resolveMentions(
       ctx.source === 'interaction'
         ? ctx.interaction!.options.getString('text', true)
-        : ctx.rawArgs;
+        : ctx.rawArgs,
+    );
 
     if (ctx.preset && !isFishAudioModel(ctx.preset)) {
       this.logger.error(`[fish] prefix preset "${ctx.preset}" is not a valid Fish Audio model`);
@@ -104,7 +105,7 @@ export class FishCommand extends BaseCommand {
       return;
     }
 
-    await this.executeSingle(ctx, model);
+    await this.executeSingle(ctx, rawText, model);
   }
 
   /** Replay a previously played clip referenced by `{alias}` or `{uid}` (scoped to the user). */
@@ -148,8 +149,12 @@ export class FishCommand extends BaseCommand {
     }
   }
 
-  private async executeSingle(ctx: CommandContext, model: FishAudioModel | undefined): Promise<void> {
-    const parsed = this.readArgs(ctx);
+  private async executeSingle(
+    ctx: CommandContext,
+    rawText: string,
+    model: FishAudioModel | undefined,
+  ): Promise<void> {
+    const parsed = this.readArgs(ctx, rawText);
     if ('error' in parsed) {
       await ctx.reply(parsed.error);
       return;
@@ -473,9 +478,9 @@ export class FishCommand extends BaseCommand {
     return out;
   }
 
-  private readArgs(ctx: CommandContext): FishArgs | { error: string } {
+  private readArgs(ctx: CommandContext, rawText: string): FishArgs | { error: string } {
     if (ctx.source === 'interaction') {
-      const text = ctx.interaction!.options.getString('text', true).trim();
+      const text = rawText.trim();
       const voiceArg = ctx.interaction!.options.getString('voice')?.trim();
       if (!text) return { error: 'Provide some text to speak.' };
       if (!voiceArg) return { text };
@@ -488,7 +493,7 @@ export class FishCommand extends BaseCommand {
       return { searchQuery: voiceArg, text };
     }
 
-    const raw = ctx.rawArgs;
+    const raw = rawText;
     if (!raw.trim()) return { error: 'Provide some text to speak.' };
 
     const aliasMatch = raw.match(LEADING_ALIAS_TAG);

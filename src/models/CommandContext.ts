@@ -4,6 +4,7 @@ import {
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
+  Guild,
   GuildMember,
   Message,
   MessageFlags,
@@ -16,6 +17,15 @@ export interface DeferOptions {
 }
 
 const PRIVATE_MESSAGE_REPLY_TTL_MS = 5_000;
+const USER_MENTION = /<@!?(\d+)>/g;
+const ROLE_MENTION = /<@&(\d+)>/g;
+const CHANNEL_MENTION = /<#(\d+)>/g;
+const CUSTOM_EMOJI = /<a?:\w+:\d+>/g;
+const SYNTAX_CHARS = /[<>[\]{}]/g;
+
+function speakableName(name: string | null | undefined): string {
+  return (name ?? '').replace(SYNTAX_CHARS, '').replace(/_+/g, ' ').trim();
+}
 
 export interface ReplyPayload {
   content?: string;
@@ -89,6 +99,37 @@ export class CommandContext {
     if (!interaction || !interaction.guild) return null;
     if (interaction.member instanceof GuildMember) return interaction.member;
     return interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  }
+
+  async resolveMentions(text: string): Promise<string> {
+    const guild = this.message?.guild ?? this.interaction?.guild ?? null;
+    const userIds = new Set(Array.from(text.matchAll(USER_MENTION), (m) => m[1]));
+    const userNames = new Map<string, string>();
+    for (const id of userIds) {
+      userNames.set(id, await this.displayNameFor(id, guild));
+    }
+
+    return text
+      .replace(USER_MENTION, (_, id: string) => userNames.get(id) ?? '')
+      .replace(ROLE_MENTION, (_, id: string) => speakableName(guild?.roles.cache.get(id)?.name))
+      .replace(CHANNEL_MENTION, (_, id: string) => {
+        const channel = this.client.channels.cache.get(id);
+        return channel && 'name' in channel ? speakableName(channel.name) : '';
+      })
+      .replace(CUSTOM_EMOJI, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+  }
+
+  private async displayNameFor(id: string, guild: Guild | null): Promise<string> {
+    const member =
+      this.message?.mentions.members?.get(id) ??
+      (guild ? await guild.members.fetch(id).catch(() => null) : null);
+    if (member) return speakableName(member.displayName);
+    const user =
+      this.message?.mentions.users.get(id) ??
+      (await this.client.users.fetch(id).catch(() => null));
+    return speakableName(user?.displayName);
   }
 
   async defer(options: DeferOptions = {}): Promise<void> {

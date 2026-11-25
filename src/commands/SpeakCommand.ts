@@ -63,7 +63,12 @@ export class SpeakCommand extends BaseCommand {
 
   async execute(ctx: CommandContext): Promise<void> {
     this.logger.debug(`[speak] start source=${ctx.source} rawArgs=${JSON.stringify(ctx.rawArgs)}`);
-    const parsed = this.readArgs(ctx);
+    const rawText = await ctx.resolveMentions(
+      ctx.source === 'interaction'
+        ? ctx.interaction!.options.getString('text', true)
+        : ctx.rawArgs,
+    );
+    const parsed = this.readArgs(ctx, rawText);
     if ('error' in parsed) {
       this.logger.debug(`[speak] readArgs error: ${parsed.error}`);
       await ctx.reply(parsed.error);
@@ -131,10 +136,10 @@ export class SpeakCommand extends BaseCommand {
     }
   }
 
-  private readArgs(ctx: CommandContext): ParsedSpeak | { error: string } {
+  private readArgs(ctx: CommandContext, input: string): ParsedSpeak | { error: string } {
     if (ctx.source === 'interaction') {
       const interaction = ctx.interaction!;
-      const rawText = interaction.options.getString('text', true).trim();
+      const rawText = input.trim();
       const voiceArg = interaction.options.getString('voice')?.trim();
       if (!rawText) return { error: 'Provide some text to speak.' };
 
@@ -155,9 +160,9 @@ export class SpeakCommand extends BaseCommand {
       return { segments: segResult.segments, defaultVoice };
     }
 
-    if (!ctx.rawArgs) return { error: 'Provide some text to speak.' };
+    if (!input) return { error: 'Provide some text to speak.' };
 
-    const peeled = SpeakCommand.peelDefaultVoice(ctx.rawArgs);
+    const peeled = SpeakCommand.peelDefaultVoice(input);
     if (peeled.voiceToken && !peeled.defaultVoice) {
       return {
         error: `Unknown voice \`${peeled.voiceToken}\`. Use \`${ctx.prefix}voices\` to see the list.`,
